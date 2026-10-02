@@ -4,3 +4,5 @@ pyarrow
 jupyter
 matplotlib
 pytest
+scipy
+scikit-learn

@@ -5,7 +5,10 @@ build_profiles() works on any subset of matches (e.g. half a season, for validat
 """
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
+from scipy.ndimage import gaussian_filter
+from sklearn.decomposition import NMF
 
 PROCESSED = Path("data/processed")
 
@@ -19,6 +22,14 @@ STYLE_EXCLUDED_SITUATIONS = {"Penalty", "DirectFreekick"}
 RARE_LAST_ACTION_SHARE = 0.02  # lastAction values below this share of shots become "Other"
 SHOT_TYPES = {"Head": "head", "LeftFoot": "left_foot", "RightFoot": "right_foot"}  # rest -> "other"
 
+# Shot-location zones (Decroos et al., "Player Vectors"). Understat X/Y are fractions of the
+# pitch: X runs towards the attacked goal, Y = 0 is the attacker's right touchline.
+PITCH_LENGTH, PITCH_WIDTH = 105, 68
+ZONE_X_EDGES = np.linspace(70, 105, 11)  # 3.5 m cells; shots from further out go in the first row
+ZONE_Y_EDGES = np.linspace(0, 68, 21)    # 3.4 m cells, full width, not mirrored
+ZONE_SMOOTHING = 1.0                     # Gaussian sigma, in cells
+ZONES = 0                                # NMF components in default profiles; 0 = no zone features
+
 KEYS = ["player_id", "season"]
 APP_SUMS = {"xA": "xa", "key_passes": "key_passes", "xGChain": "xgchain", "xGBuildup": "xgbuildup"}
 
@@ -26,6 +37,43 @@ APP_SUMS = {"xA": "xa", "key_passes": "key_passes", "xGChain": "xgchain", "xGBui
 def style_shots(shots: pd.DataFrame) -> pd.DataFrame:
     """Shots that say something about a player's style: no own goals, penalties or direct free kicks."""
     return shots[~shots["is_own_goal"] & ~shots["situation"].isin(STYLE_EXCLUDED_SITUATIONS)]
+
+
+def shots_in(shots: pd.DataFrame, apps: pd.DataFrame) -> pd.DataFrame:
+    """Shots taken in the appearances in `apps`."""
+    return shots.merge(apps[["match_id", "player_id"]].drop_duplicates(), on=["match_id", "player_id"])
+
+
+def shot_grids(shots: pd.DataFrame) -> pd.DataFrame:
+    """Per player-season, a smoothed histogram of style-shot locations over the attacking
+    area, flattened to one column per cell and normalised to sum to 1 (shape, not volume).
+    Players without style shots are left out."""
+    nx, ny = len(ZONE_X_EDGES) - 1, len(ZONE_Y_EDGES) - 1
+    s = style_shots(shots)
+    if s.empty:
+        return pd.DataFrame(columns=range(nx * ny), index=pd.MultiIndex.from_tuples([], names=KEYS))
+    x = (s["X"] * PITCH_LENGTH).clip(ZONE_X_EDGES[0], ZONE_X_EDGES[-1] - 1e-9)
+    y = (s["Y"] * PITCH_WIDTH).clip(ZONE_Y_EDGES[0], ZONE_Y_EDGES[-1] - 1e-9)
+    cell = (np.digitize(x, ZONE_X_EDGES) - 1) * ny + (np.digitize(y, ZONE_Y_EDGES) - 1)
+    counts = pd.crosstab([s[k] for k in KEYS], cell).reindex(columns=range(nx * ny), fill_value=0)
+    grid = gaussian_filter(counts.to_numpy(float).reshape(-1, nx, ny),
+                           sigma=(0, ZONE_SMOOTHING, ZONE_SMOOTHING), mode="constant")
+    grid /= grid.sum(axis=(1, 2), keepdims=True)
+    return pd.DataFrame(grid.reshape(len(grid), -1), index=counts.index)
+
+
+def fit_shot_zones(grids: pd.DataFrame, k: int) -> NMF:
+    """NMF with k components on the player x grid-cell matrix."""
+    return NMF(n_components=k, init="nndsvda", max_iter=2000, random_state=0).fit(
+        grids.dropna().to_numpy())
+
+
+def transform_shot_zones(model: NMF, grids: pd.DataFrame) -> pd.DataFrame:
+    """Each player's component weights, normalised to sum to 1 (NaN without style shots)."""
+    w = model.transform(grids.fillna(0).to_numpy())
+    total = w.sum(axis=1, keepdims=True)
+    w = np.divide(w, total, out=np.full_like(w, np.nan), where=total > 0)
+    return pd.DataFrame(w, index=grids.index, columns=[f"zone_{i + 1}" for i in range(w.shape[1])])
 
 
 def last_action_categories(shots: pd.DataFrame) -> list[str]:
@@ -96,7 +144,8 @@ def build_profiles(shots: pd.DataFrame, apps: pd.DataFrame, *,
                    min_starts: int = MIN_STARTS, min_minutes: int = MIN_MINUTES,
                    positions: set[str] | None = ATTACKING_POSITIONS,
                    shrinkage_k: float = 0,
-                   priors: dict[str, pd.Series] | None = None) -> pd.DataFrame:
+                   priors: dict[str, pd.Series] | None = None,
+                   zones: int = ZONES) -> pd.DataFrame:
     """One row per player-season in the pool, built only from the appearances in `apps`.
 
     Shots are restricted to (match_id, player_id) pairs in `apps`, so passing a subset of
@@ -106,8 +155,10 @@ def build_profiles(shots: pd.DataFrame, apps: pd.DataFrame, *,
     so both have the same columns. `positions=None` turns off the primary-position filter.
     `shrinkage_k` > 0 shrinks shot-style shares towards `priors` (see style_priors();
     by default computed from `shots`), adding k pseudo-shots at the pool-wide shares.
+    `zones` > 0 adds shot-location zone weights from an NMF with that many components,
+    fitted on the shot grids of the players in the returned pool.
     """
-    shots = shots.merge(apps[["match_id", "player_id"]].drop_duplicates(), on=["match_id", "player_id"])
+    shots = shots_in(shots, apps)
     if last_actions is None:
         last_actions = last_action_categories(shots)
 
@@ -149,7 +200,11 @@ def build_profiles(shots: pd.DataFrame, apps: pd.DataFrame, *,
     pool = (p["starts"] >= min_starts) & (p["minutes"] >= min_minutes)
     if positions is not None:
         pool &= p["primary_position"].isin(positions)
-    return p[pool].reset_index().sort_values(["league", "teams", "player"], ignore_index=True)
+    p = p[pool]
+    if zones:
+        grids = shot_grids(shots).reindex(p.index)
+        p = p.join(transform_shot_zones(fit_shot_zones(grids, zones), grids))
+    return p.reset_index().sort_values(["league", "teams", "player"], ignore_index=True)
 
 
 def report(profiles: pd.DataFrame, apps: pd.DataFrame) -> None:

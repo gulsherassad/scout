@@ -3,8 +3,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
+import scout.evaluate as ev
 from scout.evaluate import baseline, evaluate, metrics, own_ranks, split_halves, summarise
-from scout.features import KEYS, build_profiles
+from scout.features import KEYS, build_profiles, last_action_categories, shot_grids, shots_in
 
 from test_features import app, shot
 
@@ -78,3 +79,23 @@ def test_euclidean_identical_halves_rank_first():
     assert (own_ranks(z, z, metric="euclidean") == 1).all()
     za = np.array([[1.0, 0.0], [2.0, 0.0]])                   # cosine ties, distance doesn't
     assert own_ranks(za, za, metric="euclidean").tolist() == [1, 1]
+
+
+def test_zone_nmf_fitted_on_half_a_only(monkeypatch):
+    apps = season_apps(n_players=8, n_matches=10)
+    rng = np.random.default_rng(0)
+    shots = pd.DataFrame([shot(m, player_id=p, X=rng.uniform(0.8, 0.97), Y=rng.uniform(0.1, 0.9))
+                          for p in range(1, 9) for m in range(10) for _ in range(2)])
+    pool = build_profiles(shots, apps).set_index(KEYS)
+    fitted = []
+    real_fit = ev.fit_shot_zones
+    monkeypatch.setattr(ev, "fit_shot_zones", lambda g, k: fitted.append(g) or real_fit(g, k))
+
+    a, b = ev.half_profiles(shots, apps, pool, seed=4, last_actions=last_action_categories(shots), zones=3)
+    in_a = split_halves(apps, seed=4)
+    expected = shot_grids(shots_in(shots, apps[in_a])).reindex(pool.index)
+    assert len(fitted) == 1
+    pd.testing.assert_frame_equal(fitted[0], expected)
+    assert not fitted[0].equals(shot_grids(shots_in(shots, apps[~in_a])).reindex(pool.index))
+    assert [c for c in a.columns if c.startswith("zone_")] == ["zone_1", "zone_2", "zone_3"]
+    assert np.allclose(b.filter(like="zone_").sum(axis=1), 1)

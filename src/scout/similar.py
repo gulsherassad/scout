@@ -11,7 +11,7 @@ import unicodedata
 import numpy as np
 import pandas as pd
 
-from scout.evaluate import feature_sets, similarity, standardise
+from scout.evaluate import FULL, feature_sets, similarity, standardise
 from scout.features import KEYS, PROCESSED
 
 TOP_N = 10
@@ -47,7 +47,7 @@ def find_players(query: str, names: pd.Series) -> list:
 
 def similar_players(pool: pd.DataFrame, key) -> tuple[pd.DataFrame, float]:
     """The TOP_N most similar players to `key`, and the player's distinctiveness percentile."""
-    cols = feature_sets(pool.columns.tolist())["rates + style"]
+    cols = feature_sets(pool.columns.tolist())[FULL]
     z, _, _ = standardise(pool[cols], pool[cols])
     i = pool.index.get_loc(key)
     sims = pd.Series(similarity(z[i:i + 1], z)[0], index=pool.index).drop(key)

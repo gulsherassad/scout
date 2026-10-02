@@ -1,8 +1,10 @@
 """Tests for build_profiles() on small hand-built frames shaped like the processed parquet files."""
+import numpy as np
 import pandas as pd
 import pytest
 
-from scout.features import build_profiles
+from scout.features import (ZONE_Y_EDGES, build_profiles, fit_shot_zones, shot_grids,
+                            transform_shot_zones)
 
 LOW = {"min_starts": 1, "min_minutes": 0}  # thresholds off, for tests about the maths
 
@@ -16,10 +18,10 @@ def app(match_id, player_id=7, minutes=90, position="FW", xA=0.0, key_passes=0,
 
 
 def shot(match_id, player_id=7, xG=0.1, situation="OpenPlay", result="MissedShots",
-         shotType="RightFoot", lastAction="Pass"):
+         shotType="RightFoot", lastAction="Pass", X=0.9, Y=0.5):
     return {"match_id": match_id, "player_id": player_id, "season": 2025, "xG": xG,
             "situation": situation, "result": result, "is_own_goal": result == "OwnGoal",
-            "shotType": shotType, "lastAction": lastAction}
+            "shotType": shotType, "lastAction": lastAction, "X": X, "Y": Y}
 
 
 def build(shots, apps, **kw):
@@ -113,3 +115,43 @@ def test_shrinkage_gives_prior_to_player_without_style_shots():
     p = build(shots, [app(1)], **LOW, shrinkage_k=5, priors=prior).loc[7]
     assert p["shot_type_right_foot"] == pytest.approx(0.5)
     assert pd.isna(build(shots, [app(1)], **LOW).loc[7, "shot_type_head"])  # k = 0: undefined
+
+
+def zone_shots(rng, player_id, y_range, n=20):
+    """n open-play shots at random spots in the box, with Y (0 = attacker's right) in y_range."""
+    return [shot(m, player_id=player_id, X=rng.uniform(0.85, 0.97), Y=rng.uniform(*y_range))
+            for m in range(n)]
+
+
+def test_shot_grid_sums_to_one_per_player():
+    rng = np.random.default_rng(0)
+    shots = pd.DataFrame(zone_shots(rng, 1, (0.2, 0.8), n=30) + zone_shots(rng, 2, (0.4, 0.6), n=3)
+                         + [shot(0, player_id=2, situation="Penalty", X=0.885, Y=0.5),
+                            shot(0, player_id=3, X=0.30, Y=0.5)])  # far out: clipped into first row
+    grids = shot_grids(shots)
+    assert sorted(grids.index.get_level_values("player_id")) == [1, 2, 3]
+    assert np.allclose(grids.sum(axis=1), 1)
+    assert (grids.to_numpy() >= 0).all()
+
+
+def test_right_sided_player_loads_on_right_sided_components():
+    rng = np.random.default_rng(1)
+    shots = pd.DataFrame([s for p in range(10) for s in zone_shots(rng, p, (0.05, 0.3))]       # right
+                         + [s for p in range(10, 20) for s in zone_shots(rng, p, (0.7, 0.95))]  # left
+                         + zone_shots(rng, 99, (0.1, 0.25)))
+    grids = shot_grids(shots)
+    model = fit_shot_zones(grids.drop(index=99, level="player_id"), k=2)
+    y_mid = (ZONE_Y_EDGES[:-1] + ZONE_Y_EDGES[1:]) / 2
+    comps = model.components_.reshape(2, 10, 20)
+    centre_y = (comps.sum(axis=1) * y_mid).sum(axis=1) / comps.sum(axis=(1, 2))
+    weights = transform_shot_zones(model, grids).xs(99, level="player_id").iloc[0].to_numpy()
+    assert weights.sum() == pytest.approx(1)
+    assert weights[centre_y < 34].sum() > 0.9      # Y < 34 m is the attacker's right half
+
+
+def test_zone_weights_nan_without_style_shots():
+    rng = np.random.default_rng(2)
+    shots = pd.DataFrame([s for p in range(6) for s in zone_shots(rng, p, (0.1, 0.9))])
+    grids = shot_grids(shots)
+    w = transform_shot_zones(fit_shot_zones(grids, k=2), grids.reindex([*grids.index, (42, 2025)]))
+    assert w.iloc[-1].isna().all() and not w.iloc[:-1].isna().any().any()
