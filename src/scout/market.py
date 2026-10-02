@@ -344,7 +344,7 @@ def main() -> None:
           + (", ".join(f"{r.understat_team} ({r.league}, best score {r.score})" for r in unmapped.itertuples()) or "none"))
 
     matches = apply_overrides(match_players(pool, club_map, tm_season_apps, tm_players),
-                              pd.read_csv(PLAYER_OVERRIDES), tm_players)
+                              pd.read_csv(PLAYER_OVERRIDES, comment="#"), tm_players)
     v = verify(matches, apps, tm_apps)
     market = market_columns(v, tm_players, valuations, snapshot)
     market.to_parquet(PROCESSED / "market.parquet", index=False)

@@ -1,3 +1,6 @@
+# Hand-checked Understat -> Transfermarkt player pairs that name matching cannot find.
+# Rule: rows are added only with the project owner's approval. Propose new overrides with evidence
+# (names, clubs, both sources' 2025/26 goals and minutes) instead of adding them.
 understat_player_id,transfermarkt_player_id,understat_name,transfermarkt_name,reason
 10830,939964,Jean Négoce,Jean-Mattéo Bahoya,different given name / surname used by each source
 8094,607223,Mathis Cherki,Rayan Cherki,Understat uses first given name; Transfermarkt uses second

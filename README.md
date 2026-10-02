@@ -13,34 +13,32 @@ Find attacking players with a similar style across Europe's top 5 leagues, from 
 ```
 $ python -m scout.similar "Saka"
 Profile: recent form, league matches 2025-11-08 to 2026-09-19 (newest 2000 minutes; each player's window below).
+Excluded 119 inactive players (no league appearance this season); --include-inactive to list them.
                  player                    teams      league position  minutes       window  age  value €m contract  npxG/90  similarity
 1          Lamine Yamal                Barcelona     La_liga      AMR     2067  25-12–26-09   19     200.0  2031-06     0.52       0.815
-2         Mohamed Salah                Liverpool         EPL      AMR     2073  25-08–26-05   34      22.0        –     0.34       0.814
-3   Francisco Conceição                 Juventus     Serie_A      AMC     2010  25-11–26-09   23      30.0  2030-06     0.42       0.810
-4                Antony               Real Betis     La_liga      AMR     2003  26-01–26-09   26      40.0  2030-06     0.34       0.778
-5       Ousmane Dembélé      Paris Saint Germain     Ligue_1       FW     1222  25-08–26-09   29     100.0  2028-06     0.45       0.739
-6         Michael Olise            Bayern Munich  Bundesliga      AMR     2055  25-10–26-09   24     150.0  2029-06     0.43       0.739
-7    Franco Mastantuono  Real Madrid, Fiorentina     La_liga      FWR     1411  25-08–26-09   18      45.0  2031-06     0.32       0.737
-8          Nicolas Pepe               Villarreal     La_liga       MR     2084  25-11–26-09   31       6.0  2028-06     0.19       0.733
-9       Florian Thauvin                     Lens     Ligue_1      AMC     2017  25-11–26-09   33       5.0  2028-06     0.35       0.720
-10         Paulo Dybala                     Roma     Serie_A      AMC     1773  25-08–26-09   32       5.0        –     0.38       0.716
+2   Francisco Conceição                 Juventus     Serie_A      AMC     2010  25-11–26-09   23      30.0  2030-06     0.42       0.810
+3                Antony               Real Betis     La_liga      AMR     2003  26-01–26-09   26      40.0  2030-06     0.34       0.778
+4       Ousmane Dembélé      Paris Saint Germain     Ligue_1       FW     1222  25-08–26-09   29     100.0  2028-06     0.45       0.739
+5         Michael Olise            Bayern Munich  Bundesliga      AMR     2055  25-10–26-09   24     150.0  2029-06     0.43       0.739
+6    Franco Mastantuono  Real Madrid, Fiorentina     La_liga      FWR     1411  25-08–26-09   18      45.0  2031-06     0.32       0.737
+7          Nicolas Pepe               Villarreal     La_liga       MR     2084  25-11–26-09   31       6.0  2028-06     0.19       0.733
+8       Florian Thauvin                     Lens     Ligue_1      AMC     2017  25-11–26-09   33       5.0  2028-06     0.35       0.720
+9          Paulo Dybala                     Roma     Serie_A      AMC     1773  25-08–26-09   32       5.0        –     0.38       0.716
+10         Bryan Mbeumo        Manchester United         EPL      AMR     2063  25-11–26-09   26      75.0  2030-06     0.51       0.689
 ```
 
-By default profiles use each player's recent form: their newest 2,000 league minutes, across seasons (`window` shows the dates, as year-month). Use `--season 2025` for one season. Market filters are applied after ranking, so the result is the most similar players who meet them:
+By default profiles use each player's recent form: their newest 2,000 league minutes, across seasons (`window` shows the dates, as year-month). Players with no league appearance this season are left out of the results unless you pass `--include-inactive`; you can still search for them. Use `--season 2025` for one season. Market filters are applied after ranking, so the result is the most similar players who meet them:
 
 ```
 $ python -m scout.similar "Saka" --max-age 24 --max-value 40 --contract-before 2028
-Filters (age <= 24, value <= EUR 40m, contract ends before 2028) removed 513 of 521 players; 8 remain.
+Filters (age <= 24, value <= EUR 40m, contract ends before 2028) removed 397 of 402 players; 5 remain.
 
                player                         teams      league position  minutes       window  age  value €m contract  npxG/90  similarity
 1  Matteo Cancellieri                         Lazio     Serie_A      FWR     2040  25-08–26-09   24       7.0  2027-06     0.26       0.388
-2      Haissem Hassan                   Real Oviedo     La_liga      AMR     1924  25-08–26-05   24       3.5  2027-06     0.09       0.289
-3       Karim Adeyemi  Borussia Dortmund, Barcelona  Bundesliga      AMC     1440  25-08–26-09   24      40.0  2027-06     0.59       0.281
-4      Anssumane Fati                        Monaco     Ligue_1      AMC     1058  25-09–26-05   23      15.0  2026-06     0.70       0.257
-5    Tommaso Baldanzi                   Genoa, Roma     Serie_A      AMC     1123  25-09–26-09   23       8.5  2027-06     0.21       0.208
-6      Carlos Álvarez                       Levante     La_liga       MR     1961  25-08–26-08   22      15.0  2027-06     0.12       0.083
-7         Pablo Pagis             Lorient, Paris FC     Ligue_1      AMC     2059  25-10–26-09   23      15.0  2027-06     0.26       0.014
-8         Tom Louchet                          Nice     Ligue_1      AML     1344  25-08–26-05   23       7.0  2027-06     0.21      -0.040
+2       Karim Adeyemi  Borussia Dortmund, Barcelona  Bundesliga      AMC     1440  25-08–26-09   24      40.0  2027-06     0.59       0.281
+3    Tommaso Baldanzi                   Genoa, Roma     Serie_A      AMC     1123  25-09–26-09   23       8.5  2027-06     0.21       0.208
+4      Carlos Álvarez                       Levante     La_liga       MR     1961  25-08–26-08   22      15.0  2027-06     0.12       0.083
+5         Pablo Pagis             Lorient, Paris FC     Ligue_1      AMC     2059  25-10–26-09   23      15.0  2027-06     0.26       0.014
 
 Market data: Transfermarkt snapshot as of 2026-06-12 (transfermarkt-datasets, CC0).
 ```
@@ -97,8 +95,8 @@ Age, market value and contract end come from [transfermarkt-datasets](https://gi
 - **Attackers only.** Understat has shots and chance creation but no defensive events, so defenders and midfielders can't be profiled fairly.
 - **Style, not level.** Cosine similarity compares the shape of a profile, not its size, so a player who does the same things at a lower output can still be a close match.
 - **Average-looking players are hard to match.** Profiles close to the pool average are mostly noise. `scout.similar` shows a distinctiveness percentile and warns when a player is in the bottom 20%.
-- **Stale recent form.** A player with no 2026/27 league minutes in these five leagues (moved abroad, injured, or not yet playing) keeps a window from 2025/26: 119 of 522 players. Check the `window` column.
-- **Market data is a June 2026 snapshot.** Value and contract describe the player before the summer 2026 window, so they are out of date for players who moved since.
+- **Inactive players.** A player with no 2026/27 league minutes in these five leagues (moved abroad, injured, or not yet playing) keeps a window from 2025/26: 119 of 522 players. They are excluded from search results by default (`active` column in `profiles_recent.parquet`).
+- **Market data is a June 2026 snapshot.** Value and contract describe the player before the summer 2026 window, so they are out of date for players who moved since. Le Mans, promoted to Ligue 1 for 2026/27, has no club in the snapshot, so its players have no market data.
 - **Data issues.** Understat has a few quirks, handled at parse time: see [Known data issues](#known-data-issues).
 
 ## How to run

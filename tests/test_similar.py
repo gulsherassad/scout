@@ -1,7 +1,7 @@
 """Tests for player-name matching in the similar-players search."""
 import pandas as pd
 
-from scout.similar import apply_filters, find_players, normalise
+from scout.similar import apply_filters, exclude_inactive, find_players, normalise
 
 NAMES = pd.Series({1: "Kylian Mbappé", 2: "Ferrán Torres", 3: "Pau Torres",
                    4: "Raul García", 5: "Raul", 6: "Jean-Philippe Mateta"})
@@ -67,3 +67,9 @@ def test_missing_field_is_removed_only_when_filtered_on():
     r = ranked_players()
     assert "D" not in set(apply_filters(r, max_age=30)[0]["player"])            # unknown age
     assert "D" in set(apply_filters(r, max_value=30)[0]["player"])              # value known
+
+
+def test_exclude_inactive_keeps_order_and_counts():
+    r = ranked_players().assign(active=[True, False, True, None, True])
+    kept, excluded = exclude_inactive(r)
+    assert list(kept["player"]) == ["A", "C", "E"] and excluded == 2

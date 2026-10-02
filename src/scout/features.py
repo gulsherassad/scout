@@ -62,6 +62,12 @@ def recent_window(apps: pd.DataFrame, window_minutes: int = WINDOW_MINUTES) -> p
     return window
 
 
+def active_players(apps: pd.DataFrame) -> pd.Series:
+    """True for players with at least one league appearance in the latest season in `apps`."""
+    current = apps["season"].max()
+    return apps.groupby("player_id")["season"].max().eq(current).rename("active")
+
+
 def window_dates(window: pd.DataFrame) -> pd.DataFrame:
     """First and last appearance date of each player's window."""
     return window.groupby(KEYS)["date"].agg(window_start="min", window_end="max")
@@ -260,13 +266,16 @@ def main() -> None:
     shots = pd.read_parquet(PROCESSED / "shots.parquet")
     apps = pd.read_parquet(PROCESSED / "appearances.parquet")
     if args.mode == "recent":
+        active = active_players(apps)
         apps = recent_window(apps)
         path = PROCESSED / "profiles_recent.parquet"
     else:
         path = PROCESSED / "profiles.parquet"
     profiles = build_profiles(shots, apps)
     if args.mode == "recent":
-        profiles = profiles.join(window_dates(apps), on=KEYS)
+        profiles = profiles.join(window_dates(apps), on=KEYS).join(active, on="player_id")
+        print(f"active (a league appearance in {apps['season'].max()}/{(apps['season'].max() + 1) % 100:02d}): "
+              f"{profiles['active'].sum()} of {len(profiles)}")
     profiles.to_parquet(path, index=False)
     print(f"wrote {path}: {len(profiles)} rows, {profiles.shape[1]} columns")
     if args.mode == "recent":

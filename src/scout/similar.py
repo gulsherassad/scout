@@ -69,6 +69,12 @@ def with_market(profiles: pd.DataFrame, market: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def exclude_inactive(ranked: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Drop players with no league appearance in the current season, keeping the order."""
+    keep = ranked["active"].fillna(False).astype(bool)
+    return ranked[keep], int((~keep).sum())
+
+
 def apply_filters(ranked: pd.DataFrame, max_age: int | None = None, max_value: float | None = None,
                   contract_before: int | None = None) -> tuple[pd.DataFrame, int]:
     """Keep players meeting every given criterion, in their similarity order, and count
@@ -88,6 +94,8 @@ def main() -> None:
     p.add_argument("name", help='player name, e.g. "Mbappe" (accents optional)')
     p.add_argument("--season", type=int,
                    help="use one season's profiles (e.g. 2025 = 2025/26) instead of recent form")
+    p.add_argument("--include-inactive", action="store_true",
+                   help="recent form: also list players with no league appearance this season")
     p.add_argument("--max-age", type=int, help="maximum age in whole years at the market snapshot")
     p.add_argument("--max-value", type=float, help="maximum market value, EUR millions")
     p.add_argument("--contract-before", type=int,
@@ -116,12 +124,19 @@ def main() -> None:
     key = matches[0]
     me = pool.loc[key]
     ranked, percentile = similar_players(pool, key)
+    inactive = 0
+    if args.season is None and not args.include_inactive:
+        ranked, inactive = exclude_inactive(ranked)
     kept, removed = apply_filters(ranked, args.max_age, args.max_value, args.contract_before)
     print(f"{me['player']} | {me['teams']} | {me['league']} | {me['primary_position']} | "
           f"{me['minutes']} min | {me['shots']} shots | npxG/90 {me['npxg_per90']:.2f}")
     if args.season is None:
         print(f"Profile: recent form, league matches {me['window_start']:%Y-%m-%d} to {me['window_end']:%Y-%m-%d} "
-              f"(newest {WINDOW_MINUTES} minutes; each player's window below).")
+              f"(newest {WINDOW_MINUTES} minutes; each player's window below)"
+              + ("." if me["active"] else "; no league appearance this season."))
+        if inactive:
+            print(f"Excluded {inactive} inactive players (no league appearance this season); "
+                  f"--include-inactive to list them.")
     else:
         print(f"Profile: season {args.season}/{(args.season + 1) % 100:02d}.")
     print(f"Distinctiveness: more distinctive than {percentile:.0f}% of attackers in the pool.")

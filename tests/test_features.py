@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from scout.features import (ZONE_Y_EDGES, build_profiles, fit_shot_zones, recent_window, shot_grids,
+from scout.features import (ZONE_Y_EDGES, active_players, build_profiles, fit_shot_zones, recent_window, shot_grids,
                             transform_shot_zones)
 
 LOW = {"min_starts": 1, "min_minutes": 0}  # thresholds off, for tests about the maths
@@ -197,3 +197,10 @@ def test_recent_window_keeps_everything_under_the_limit_and_per_player():
     w = recent_window(apps, window_minutes=2000)
     assert (w["player_id"] == 1).sum() == 5
     assert (w["player_id"] == 2).sum() == 23
+
+
+def test_active_players_need_an_appearance_in_the_latest_season():
+    apps = pd.DataFrame([dated_app(1, "2026-09-01", 2026, player_id=1),
+                         dated_app(2, "2026-05-01", 2025, player_id=1),
+                         dated_app(3, "2026-05-01", 2025, player_id=2)])
+    assert active_players(apps).to_dict() == {1: True, 2: False}
