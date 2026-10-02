@@ -23,6 +23,40 @@ def load_json(path: Path) -> dict:
     return json.loads(path.read_text())
 
 
+def dedupe_match(m: dict, match_id: str) -> dict:
+    """Drop entries Understat sent twice within a side (seen in match 29482).
+
+    A player appears at most once per side, so roster entries are deduped by player_id
+    (copies can differ in roster_in/roster_out, which point at other roster ids).
+    Shots are duplicates when every field except id matches.
+    """
+    rosters, shots, dropped_r, dropped_s = {}, {}, 0, 0
+    for side in ("h", "a"):
+        seen_players, kept = set(), {}
+        for key, r in m["rosters"][side].items():
+            if r["player_id"] in seen_players:
+                dropped_r += 1
+            else:
+                seen_players.add(r["player_id"])
+                kept[key] = r
+        rosters[side] = kept
+
+        seen_shots, kept = set(), []
+        for s in m["shots"][side]:
+            content = tuple(sorted((k, str(v)) for k, v in s.items() if k != "id"))
+            if content in seen_shots:
+                dropped_s += 1
+            else:
+                seen_shots.add(content)
+                kept.append(s)
+        shots[side] = kept
+
+    if dropped_r or dropped_s:
+        print(f"match {match_id}: dropped {dropped_r} duplicate roster entries, "
+              f"{dropped_s} duplicate shots (Understat sent them twice)")
+    return {**m, "rosters": rosters, "shots": shots}
+
+
 def parse_league_season(league_file: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Flatten every cached match of one league-season into shot rows and appearance rows."""
     league, season = league_file.stem.rsplit("_", 1)
@@ -33,7 +67,7 @@ def parse_league_season(league_file: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
         path = RAW / "matches" / f"{f['id']}.json"
         if not path.exists():
             continue  # not downloaded yet; the next ingest run will fetch it
-        m = load_json(path)
+        m = dedupe_match(load_json(path), f["id"])
         meta = {"match_id": f["id"], "league": league, "season": int(season),
                 "date": f["datetime"]}
         teams = {"h": f["h"]["title"], "a": f["a"]["title"]}
