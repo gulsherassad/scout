@@ -4,7 +4,8 @@ Generated 2026-10-02 by `python -m scout.evaluate`.
 
 ## Setup
 - **Population:** 493 player-seasons from `profiles.parquet` (EPL 116, La_liga 109, Serie_A 93, Ligue_1 88, Bundesliga 87).
-- **Method:** each player's appearances are split at random into halves A and B. Profiles built on B are matched against all 493 A profiles by cosine similarity on z-scored features (fitted on A); we record where the player's own A profile ranks.
+- **Method:** each player's appearances are split into halves A and B. Profiles built on B are matched against all 493 A profiles on z-scored features (fitted on A); we record where the player's own A profile ranks.
+- **Configuration:** random split, cosine similarity, no shrinkage.
 - **Splits:** 20 (seeds 0–19); metrics are mean ± std across splits.
 - **Imputed values** (NaN replaced by A's mean, all features): 4.2 per split on average, out of 23664.
 - The single-feature baseline uses minus the absolute difference instead of cosine, which is always ±1 in one dimension. Ties count against the player.
