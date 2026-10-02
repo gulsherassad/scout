@@ -136,9 +136,9 @@ def fmt_table(df: pd.DataFrame) -> str:
     return "\n".join(lines)
 
 
-def rates_style(ranks: pd.DataFrame, pool: pd.DataFrame) -> pd.DataFrame:
-    """Ranks for the full feature set, with each player's pool columns and shot bucket."""
-    full = ranks[ranks["feature_set"] == FULL].join(pool, on=KEYS)
+def rates_style(ranks: pd.DataFrame, pool: pd.DataFrame, feature_set: str = FULL) -> pd.DataFrame:
+    """Ranks for one feature set (default: all), with each player's pool columns and shot bucket."""
+    full = ranks[ranks["feature_set"] == feature_set].join(pool, on=KEYS)
     full["hit@10"] = full["rank"] <= 10
     full["shot_bucket"] = pd.cut(full["shots"], [-1, 19, 39, np.inf], labels=list(SHOT_BUCKETS))
     return full
@@ -149,9 +149,9 @@ def mean_ranks(ranks: pd.DataFrame) -> pd.Series:
     return ranks[ranks["feature_set"] == FULL].groupby(KEYS)["rank"].mean()
 
 
-def log_row(ranks: pd.DataFrame, pool: pd.DataFrame) -> dict[str, str]:
-    """The experiment-log metrics for the full feature set: mean ± std across splits."""
-    full = rates_style(ranks, pool)
+def log_row(ranks: pd.DataFrame, pool: pd.DataFrame, feature_set: str = FULL) -> dict[str, str]:
+    """The experiment-log metrics for one feature set: mean ± std across splits."""
+    full = rates_style(ranks, pool, feature_set)
     per_seed = full.groupby("seed")["rank"].apply(lambda r: pd.Series(metrics(r.to_numpy()))).unstack()
     per_seed["recall@10 (<20 shots)"] = full[full["shot_bucket"] == "<20"].groupby("seed")["hit@10"].mean()
     return {c: f"{per_seed[c].mean():.3f} ± {per_seed[c].std():.3f}" for c in per_seed}
@@ -310,8 +310,9 @@ def main() -> None:
     if base is not None:
         print(report[report.index("## Paired comparison"):report.index("## Baseline's hardest")])
         print(report[report.index("Average of the mean ranks"):].split("\n")[0])
-    row = log_row(ranks, pool)
-    print("log row: " + " | ".join(f"{k} {v}" for k, v in row.items()))
+    for feature_set in [FULL] + (["zones only"] if config["zones"] else []):
+        row = log_row(ranks, pool, feature_set)
+        print(f"log row ({feature_set}): " + " | ".join(f"{k} {v}" for k, v in row.items()))
     print(f"full report: {path}")
 
 
