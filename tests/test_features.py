@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from scout.features import (ZONE_Y_EDGES, build_profiles, fit_shot_zones, shot_grids,
+from scout.features import (ZONE_Y_EDGES, build_profiles, fit_shot_zones, recent_window, shot_grids,
                             transform_shot_zones)
 
 LOW = {"min_starts": 1, "min_minutes": 0}  # thresholds off, for tests about the maths
@@ -166,3 +166,34 @@ def test_build_profiles_adds_zone_weights():
     p = build(shots, apps, **LOW, zones=3)
     assert list(p.filter(like="zone_").columns) == ["zone_1", "zone_2", "zone_3"]
     assert np.allclose(p.filter(like="zone_").sum(axis=1), 1)
+
+
+def dated_app(match_id, date, season, minutes=90, player_id=7):
+    return {**app(match_id, player_id=player_id, minutes=minutes),
+            "date": pd.Timestamp(date), "season": season}
+
+
+def test_recent_window_stops_at_window_minutes_newest_first():
+    apps = pd.DataFrame([dated_app(m, f"2026-09-{m + 1:02d}", 2026) for m in range(25)])  # 25 x 90 min
+    w = recent_window(apps, window_minutes=2000)
+    assert len(w) == 23                                  # 22 x 90 = 1980 < 2000; the 23rd reaches it
+    assert w["date"].min() == pd.Timestamp("2026-09-03")  # the two oldest are left out
+    assert w["minutes"].sum() == 2070
+
+
+def test_recent_window_crosses_season_boundary():
+    apps = pd.DataFrame([dated_app(m, f"2026-0{8 + m // 10}-{m % 10 + 10}", 2026) for m in range(10)]   # 900 min
+                        + [dated_app(100 + m, f"2026-05-{m + 1:02d}", 2025) for m in range(20)])      # older season
+    w = recent_window(apps, window_minutes=2000)
+    assert w["minutes"].sum() == 2070                    # 10 new + 13 newest of the old season
+    old = w[w["match_id"] >= 100]
+    assert len(old) == 13 and old["date"].min() == pd.Timestamp("2026-05-08")
+    assert set(w["season"]) == {2026}                    # one profile, labelled by its newest season
+
+
+def test_recent_window_keeps_everything_under_the_limit_and_per_player():
+    apps = pd.DataFrame([dated_app(m, f"2026-09-{m + 1:02d}", 2026, player_id=1) for m in range(5)]
+                        + [dated_app(m, f"2026-09-{m + 1:02d}", 2026, player_id=2) for m in range(30)])
+    w = recent_window(apps, window_minutes=2000)
+    assert (w["player_id"] == 1).sum() == 5
+    assert (w["player_id"] == 2).sum() == 23

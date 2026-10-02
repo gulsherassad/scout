@@ -5,6 +5,8 @@ build_profiles() works on any subset of matches (e.g. half a season, for validat
 """
 from pathlib import Path
 
+import argparse
+
 import numpy as np
 import pandas as pd
 from scipy.ndimage import gaussian_filter
@@ -16,6 +18,9 @@ PROCESSED = Path("data/processed")
 ATTACKING_POSITIONS = {"FW", "FWL", "FWR", "AMC", "AML", "AMR", "ML", "MR"}
 MIN_STARTS = 5
 MIN_MINUTES = 900
+
+# Recent mode: each player's newest league appearances, across seasons, up to this many minutes
+WINDOW_MINUTES = 2000
 
 # Shots used for style features
 STYLE_EXCLUDED_SITUATIONS = {"Penalty", "DirectFreekick"}
@@ -40,8 +45,26 @@ def style_shots(shots: pd.DataFrame) -> pd.DataFrame:
 
 
 def shots_in(shots: pd.DataFrame, apps: pd.DataFrame) -> pd.DataFrame:
-    """Shots taken in the appearances in `apps`."""
-    return shots.merge(apps[["match_id", "player_id"]].drop_duplicates(), on=["match_id", "player_id"])
+    """Shots taken in the appearances in `apps`, labelled with the appearances' season
+    (which recent mode sets to the window's season)."""
+    keys = apps[["match_id", "player_id", "season"]].drop_duplicates()
+    return shots.drop(columns="season").merge(keys, on=["match_id", "player_id"])
+
+
+def recent_window(apps: pd.DataFrame, window_minutes: int = WINDOW_MINUTES) -> pd.DataFrame:
+    """Each player's most recent appearances, newest first across seasons, up to and
+    including the one that reaches `window_minutes`. Every row's season is set to the
+    season of the player's newest appearance, so the window is one player-season."""
+    a = apps.sort_values(["player_id", "date", "match_id"], ascending=[True, False, False])
+    before = a.groupby("player_id")["minutes"].cumsum() - a["minutes"]
+    window = a[before < window_minutes].copy()
+    window["season"] = window.groupby("player_id")["season"].transform("max")
+    return window
+
+
+def window_dates(window: pd.DataFrame) -> pd.DataFrame:
+    """First and last appearance date of each player's window."""
+    return window.groupby(KEYS)["date"].agg(window_start="min", window_end="max")
 
 
 def shot_grids(shots: pd.DataFrame) -> pd.DataFrame:
@@ -228,11 +251,27 @@ def report(profiles: pd.DataFrame, apps: pd.DataFrame) -> None:
 
 
 def main() -> None:
+    p = argparse.ArgumentParser(description="Build player style profiles.")
+    p.add_argument("--mode", choices=("season", "recent"), default="season",
+                   help=f"one profile per player-season, or per player from their newest "
+                        f"{WINDOW_MINUTES} league minutes across seasons")
+    args = p.parse_args()
+
     shots = pd.read_parquet(PROCESSED / "shots.parquet")
     apps = pd.read_parquet(PROCESSED / "appearances.parquet")
+    if args.mode == "recent":
+        apps = recent_window(apps)
+        path = PROCESSED / "profiles_recent.parquet"
+    else:
+        path = PROCESSED / "profiles.parquet"
     profiles = build_profiles(shots, apps)
-    profiles.to_parquet(PROCESSED / "profiles.parquet", index=False)
-    print(f"wrote {PROCESSED / 'profiles.parquet'}: {len(profiles)} rows, {profiles.shape[1]} columns")
+    if args.mode == "recent":
+        profiles = profiles.join(window_dates(apps), on=KEYS)
+    profiles.to_parquet(path, index=False)
+    print(f"wrote {path}: {len(profiles)} rows, {profiles.shape[1]} columns")
+    if args.mode == "recent":
+        print(f"window end: {profiles['window_end'].min().date()} to {profiles['window_end'].max().date()}; "
+              f"window start: {profiles['window_start'].min().date()} to {profiles['window_start'].max().date()}")
     report(profiles, apps)
 
 

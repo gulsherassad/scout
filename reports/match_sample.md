@@ -1,6 +1,6 @@
 # Player match sample
 
-50 random matched pairs (seed 0) for checking by hand. Goals and minutes are 2025/26 league totals from each source.
+50 random matched pairs (seed 0, pinned in data_mappings/sample_ids.csv) for checking by hand. Goals and minutes are 2025/26 league totals from each source.
 
 | Understat name | Transfermarkt name | club (Understat) | match score | goals U / TM | minutes U / TM | flag |
 |---|---|---|---|---|---|---|

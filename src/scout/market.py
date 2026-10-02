@@ -25,11 +25,17 @@ TABLES = ["players", "player_valuations", "clubs", "appearances", "competitions"
 CLUB_MAP = Path("data_mappings/clubs.csv")
 PLAYER_OVERRIDES = Path("data_mappings/player_overrides.csv")  # hand-checked pairs names can't match
 SAMPLE = Path("reports/match_sample.md")
+SAMPLE_IDS = Path("data_mappings/sample_ids.csv")  # pins the hand-checked sample
+POOLS = [PROCESSED / "profiles.parquet", PROCESSED / "profiles_recent.parquet"]
 
 SEASON = 2025  # both sources label 2025/26 as 2025
 LEAGUES = {"EPL": "GB1", "La_liga": "ES1", "Bundesliga": "L1", "Serie_A": "IT1", "Ligue_1": "FR1"}
+# The snapshot has no second divisions: clubs promoted for 2026/27 are found through each
+# country's domestic cup and through clubs.csv's (snapshot) league listing.
+LEAGUE_CUPS = {"GB1": "FAC", "ES1": "CDR", "L1": "DFB", "IT1": "CIT", "FR1": "FRCH"}
 
 CLUB_LOW_CONFIDENCE = 0.75   # club matches below this score are printed for checking
+NEW_CLUB_MIN_SCORE = 0.75    # promoted clubs below this are left unmapped (club not in snapshot)
 MIN_NAME_SCORE = 0.75        # player matches below this are left unmatched
 GOALS_TOLERANCE = 1          # verification: flag if goals differ by more than this
 MINUTES_TOLERANCE = 0.15     # ... or minutes by more than this share of Understat's
@@ -119,58 +125,95 @@ def best_candidate(name: str, candidates: pd.Series) -> tuple[object, float]:
 # ---------- clubs ----------
 
 def tm_league_clubs(games: pd.DataFrame, clubs: pd.DataFrame) -> pd.DataFrame:
-    """Clubs that played SEASON league games, with every name variant Transfermarkt uses."""
-    g = games[games["competition_id"].isin(LEAGUES.values()) & (games["season"] == SEASON)]
+    """Candidate clubs per league, with every name variant Transfermarkt uses: clubs in
+    SEASON league or domestic-cup games, and clubs listed in that league in clubs.csv."""
+    league_of = {c: c for c in LEAGUES.values()} | {cup: lg for lg, cup in LEAGUE_CUPS.items()}
+    g = games[games["competition_id"].isin(league_of) & (games["season"] == SEASON)]
+    g = g.assign(competition_id=g["competition_id"].map(league_of))
+    listed = clubs.loc[clubs["domestic_competition_id"].isin(LEAGUES.values()),
+                       ["domestic_competition_id", "club_id", "name"]]
     names = pd.concat([g[["competition_id", "home_club_id", "home_club_name"]].set_axis(["competition_id", "club_id", "name"], axis=1),
-                       g[["competition_id", "away_club_id", "away_club_name"]].set_axis(["competition_id", "club_id", "name"], axis=1)])
+                       g[["competition_id", "away_club_id", "away_club_name"]].set_axis(["competition_id", "club_id", "name"], axis=1),
+                       listed.set_axis(["competition_id", "club_id", "name"], axis=1)])
     out = names.groupby(["competition_id", "club_id"])["name"].agg(lambda s: sorted(set(s.dropna()))).reset_index()
+    lg = games[games["competition_id"].isin(LEAGUES.values()) & (games["season"] == SEASON)]
+    out["in_league"] = out["club_id"].isin(set(lg["home_club_id"]) | set(lg["away_club_id"]))
     extra = clubs.set_index("club_id")
     out["variants"] = [n + [extra.at[c, "name"], extra.at[c, "club_code"].replace("-", " ")] if c in extra.index else n
                        for c, n in zip(out["club_id"], out["name"])]
     out["name"] = out["name"].str[0]
-    return out
+    out = out[out["variants"].map(len) > 0]  # no usable name: cannot be matched
+    out["name"] = out["name"].fillna(out["variants"].str[0])
+    return out.reset_index(drop=True)
+
+
+def assign(ours: list[str], theirs: pd.DataFrame, league: str) -> list[dict]:
+    """One-to-one assignment maximising the total name score (Hungarian algorithm)."""
+    if not ours or theirs.empty:
+        return []
+    score = np.array([[max(name_score(t, v, CLUB_STOPWORDS) for v in variants)
+                       for variants in theirs["variants"]] for t in ours])
+    rows = []
+    for i, j in zip(*linear_sum_assignment(-score)):
+        runner_up = np.delete(score[i], j).max() if score.shape[1] > 1 else 0.0
+        rows.append({"league": league, "understat_team": ours[i],
+                     "transfermarkt_club_id": int(theirs.at[j, "club_id"]),
+                     "transfermarkt_club": theirs.at[j, "name"],
+                     "score": round(float(score[i, j]), 3), "runner_up_score": round(float(runner_up), 3)})
+    return rows
 
 
 def map_clubs(teams: pd.DataFrame, tm: pd.DataFrame) -> pd.DataFrame:
-    """One-to-one mapping of Understat teams to Transfermarkt clubs within each league,
-    maximising the total name score (Hungarian assignment)."""
+    """Map Understat teams (league, team, season) to Transfermarkt clubs within each league.
+    Teams that played SEASON are assigned among Transfermarkt's SEASON league clubs only;
+    teams new since then (promoted) among the remaining candidates (cup and listed clubs),
+    so a lower-league cup side can never take an established club's place."""
+    first = teams.groupby(["league", "team"])["season"].min().reset_index()
     rows = []
     for league, comp in LEAGUES.items():
-        ours = teams.loc[teams["league"] == league, "team"].sort_values().tolist()
-        theirs = tm[tm["competition_id"] == comp].reset_index(drop=True)
-        score = np.array([[max(name_score(t, v, CLUB_STOPWORDS) for v in variants)
-                           for variants in theirs["variants"]] for t in ours])
-        r, c = linear_sum_assignment(-score)
-        for i, j in zip(r, c):
-            runner_up = np.delete(score[i], j).max() if score.shape[1] > 1 else 0.0
-            rows.append({"league": league, "understat_team": ours[i],
-                         "transfermarkt_club_id": int(theirs.at[j, "club_id"]),
-                         "transfermarkt_club": theirs.at[j, "name"],
-                         "score": round(float(score[i, j]), 3), "runner_up_score": round(float(runner_up), 3)})
-    return pd.DataFrame(rows)
+        f = first[first["league"] == league]
+        clubs = tm[tm["competition_id"] == comp]
+        stage1 = assign(sorted(f.loc[f["season"] <= SEASON, "team"]), clubs[clubs["in_league"]].reset_index(drop=True), league)
+        used = {r["transfermarkt_club_id"] for r in stage1}
+        rest = clubs[~clubs["in_league"] & ~clubs["club_id"].isin(used)].reset_index(drop=True)
+        stage2 = assign(sorted(f.loc[f["season"] > SEASON, "team"]), rest, league)
+        for r in stage2:  # a club missing from the snapshot must not take a wrong match
+            if r["score"] < NEW_CLUB_MIN_SCORE:
+                r.update(transfermarkt_club_id=None, transfermarkt_club=None)
+        rows += stage1 + stage2
+    out = pd.DataFrame(rows)
+    out["transfermarkt_club_id"] = out["transfermarkt_club_id"].astype("Int64")
+    return out
 
 
 # ---------- players ----------
 
-def tm_league_appearances(appearances: pd.DataFrame, games: pd.DataFrame) -> pd.DataFrame:
-    """Transfermarkt appearances in SEASON games of our 5 leagues."""
-    g = games.loc[games["competition_id"].isin(LEAGUES.values()) & (games["season"] == SEASON), ["game_id"]]
-    return appearances.merge(g, on="game_id")
+def tm_league_appearances(appearances: pd.DataFrame, games: pd.DataFrame,
+                          all_competitions: bool = False) -> pd.DataFrame:
+    """Transfermarkt appearances in SEASON games of our 5 leagues (or of any competition)."""
+    g = games[games["season"] == SEASON]
+    if not all_competitions:
+        g = g[g["competition_id"].isin(LEAGUES.values())]
+    return appearances.merge(g[["game_id"]], on="game_id")
 
 
 def match_players(pool: pd.DataFrame, club_map: pd.DataFrame, tm_apps: pd.DataFrame,
                   tm_players: pd.DataFrame) -> pd.DataFrame:
-    """Best Transfermarkt candidate for each pool player, among players who appeared in
-    league games for the club(s) mapped from the player's Understat team(s)."""
-    club_ids = club_map.set_index("understat_team")["transfermarkt_club_id"]
-    by_club = tm_apps.groupby("player_club_id")["player_id"].unique()
+    """Best Transfermarkt candidate for each pool player (indexed by Understat player_id),
+    among players who played SEASON games for, or were registered at the snapshot with,
+    the club(s) mapped from the player's Understat team(s)."""
+    club_ids = (club_map.dropna(subset=["transfermarkt_club_id"]).drop_duplicates("understat_team")
+                .set_index("understat_team")["transfermarkt_club_id"])
+    by_club = pd.concat([tm_apps[["player_club_id", "player_id"]],
+                         tm_players[["current_club_id", "player_id"]].set_axis(["player_club_id", "player_id"], axis=1)]
+                        ).groupby("player_club_id")["player_id"].unique()
     names = tm_players.set_index("player_id")["name"]
     rows = []
-    for (pid, season), r in pool.iterrows():
+    for pid, r in pool.iterrows():
         clubs = [club_ids[t] for t in r["teams"].split(", ") if t in club_ids]
         ids = pd.unique(np.concatenate([by_club.get(c, np.array([], dtype=int)) for c in clubs] or [[]]))
         best, score = best_candidate(r["player"], names.reindex(ids).dropna())
-        rows.append({"understat_player_id": pid, "season": season, "player": r["player"],
+        rows.append({"understat_player_id": pid, "player": r["player"],
                      "teams": r["teams"], "candidates": len(ids), "best_candidate": names.get(best),
                      "best_candidate_id": best, "match_score": round(score, 3)})
     out = pd.DataFrame(rows)
@@ -212,6 +255,8 @@ def verify(matches: pd.DataFrame, understat_apps: pd.DataFrame, tm_apps: pd.Data
     out["flag_reason"] = np.select([goals_off & minutes_off, goals_off, minutes_off],
                                    ["goals and minutes", "goals", "minutes"], default="")
     out["verification_flag"] = out["flag_reason"] != ""
+    no_stats = out["understat_minutes"].isna() | out["tm_minutes"].isna()
+    out.loc[no_stats, ["verification_flag", "flag_reason"]] = [False, f"no {SEASON}/{(SEASON + 1) % 100:02d} league stats to compare"]
     out.loc[out["transfermarkt_player_id"].isna(), ["verification_flag", "flag_reason"]] = [False, "unmatched"]
     return out
 
@@ -234,11 +279,21 @@ def market_columns(matched: pd.DataFrame, tm_players: pd.DataFrame, valuations: 
     return out.rename(columns={"current_club_name": "current_club_at_snapshot"})
 
 
-def write_sample(v: pd.DataFrame, path: Path = SAMPLE, n: int = N_SAMPLE) -> None:
-    """Random matched pairs, names, clubs, goals and minutes only, for checking by hand."""
-    s = v[v["transfermarkt_player_id"].notna()].sample(n, random_state=0).sort_values("player")
+def sample_ids(v: pd.DataFrame, path: Path = SAMPLE_IDS, n: int = N_SAMPLE) -> list[int]:
+    """The pinned sample's Understat ids; drawn at random (seed 0) and saved the first time."""
+    if path.exists():
+        return pd.read_csv(path)["understat_player_id"].tolist()
+    ids = v[v["transfermarkt_player_id"].notna()].sample(n, random_state=0)["understat_player_id"].tolist()
+    pd.DataFrame({"understat_player_id": ids}).to_csv(path, index=False)
+    return ids
+
+
+def write_sample(v: pd.DataFrame, ids: list[int], path: Path = SAMPLE) -> None:
+    """The pinned matched pairs: names, clubs, goals and minutes only, for checking by hand."""
+    s = v[v["understat_player_id"].isin(ids)].sort_values("player")
+    n = len(s)
     lines = ["# Player match sample", "",
-             f"{n} random matched pairs (seed 0) for checking by hand. Goals and minutes are "
+             f"{n} random matched pairs (seed 0, pinned in {SAMPLE_IDS}) for checking by hand. Goals and minutes are "
              f"{SEASON}/{(SEASON + 1) % 100:02d} league totals from each source.", "",
              "| Understat name | Transfermarkt name | club (Understat) | match score | goals U / TM | minutes U / TM | flag |",
              "|---|---|---|---|---|---|---|"]
@@ -250,29 +305,45 @@ def write_sample(v: pd.DataFrame, path: Path = SAMPLE, n: int = N_SAMPLE) -> Non
     path.write_text("\n".join(lines) + "\n")
 
 
+def pool_players() -> pd.DataFrame:
+    """Every player in any profile pool, indexed by Understat player_id, with their name
+    and every team they have a profile for (most minutes first within each pool)."""
+    frames = [pd.read_parquet(p)[["player_id", "player", "teams"]] for p in POOLS if p.exists()]
+    pool = pd.concat(frames)
+    teams = pool.groupby("player_id")["teams"].agg(
+        lambda s: ", ".join(dict.fromkeys(t for ts in s for t in ts.split(", "))))
+    return pool.groupby("player_id")[["player"]].last().join(teams)
+
+
 def main() -> None:
     download()
     games, clubs = read("games"), read("clubs")
     tm_players, valuations = read("players"), read("player_valuations")
-    tm_apps = tm_league_appearances(read("appearances"), games)
+    all_tm_apps = read("appearances")
+    tm_apps = tm_league_appearances(all_tm_apps, games)
+    tm_season_apps = tm_league_appearances(all_tm_apps, games, all_competitions=True)
     snapshot = pd.to_datetime(games["date"]).max()
     meta = json.loads((RAW / "snapshot.json").read_text())
     meta |= {"snapshot_date": str(snapshot.date()), "latest_valuation": str(valuations["date"].max())}
     (RAW / "snapshot.json").write_text(json.dumps(meta, indent=1))
     print(f"Transfermarkt snapshot: games to {snapshot.date()}, valuations to {valuations['date'].max()}")
 
-    apps = pd.read_parquet(PROCESSED / "appearances.parquet")
-    apps = apps[apps["season"] == SEASON]
-    pool = pd.read_parquet(PROCESSED / "profiles.parquet").set_index(KEYS)
+    all_apps = pd.read_parquet(PROCESSED / "appearances.parquet")
+    apps = all_apps[all_apps["season"] == SEASON]
+    pool = pool_players()
 
-    club_map = map_clubs(apps[["league", "team"]].drop_duplicates(), tm_league_clubs(games, clubs))
+    club_map = map_clubs(all_apps[["league", "team", "season"]].drop_duplicates(), tm_league_clubs(games, clubs))
     CLUB_MAP.parent.mkdir(exist_ok=True)
     club_map.to_csv(CLUB_MAP, index=False)
-    low = club_map[club_map["score"] < CLUB_LOW_CONFIDENCE]
-    print(f"\nclubs: {len(club_map)} mapped -> {CLUB_MAP}; {len(low)} low-confidence (score < {CLUB_LOW_CONFIDENCE}):")
+    unmapped = club_map[club_map["transfermarkt_club_id"].isna()]
+    low = club_map[(club_map["score"] < CLUB_LOW_CONFIDENCE) & club_map["transfermarkt_club_id"].notna()]
+    print(f"\nclubs: {len(club_map) - len(unmapped)} of {len(club_map)} mapped -> {CLUB_MAP}; "
+          f"{len(low)} low-confidence (score < {CLUB_LOW_CONFIDENCE}):")
     print(low.to_string(index=False) if len(low) else "  none")
+    print(f"unmapped (promoted, no Transfermarkt club scored >= {NEW_CLUB_MIN_SCORE}): "
+          + (", ".join(f"{r.understat_team} ({r.league}, best score {r.score})" for r in unmapped.itertuples()) or "none"))
 
-    matches = apply_overrides(match_players(pool, club_map, tm_apps, tm_players),
+    matches = apply_overrides(match_players(pool, club_map, tm_season_apps, tm_players),
                               pd.read_csv(PLAYER_OVERRIDES), tm_players)
     v = verify(matches, apps, tm_apps)
     market = market_columns(v, tm_players, valuations, snapshot)
@@ -284,6 +355,10 @@ def main() -> None:
     print(f"\nplayers: {matched.sum()} of {len(v)} matched ({matched.mean():.1%}; {n_override} from "
           f"{PLAYER_OVERRIDES}); {len(flagged)} flagged by verification "
           f"(goals off by > {GOALS_TOLERANCE} or minutes by > {MINUTES_TOLERANCE:.0%})")
+    new = ~v["understat_player_id"].isin(apps["player_id"])
+    print(f"players with no {SEASON}/{(SEASON + 1) % 100:02d} Understat appearances (new to our leagues): "
+          f"{new.sum()}, of whom {(new & matched).sum()} matched (unverified: no shared season to compare) "
+          f"and {(new & ~matched).sum()} unmatched")
     pd.set_option("display.width", 220)
     cols = ["player", "teams", "transfermarkt_name", "match_method", "match_score", "understat_goals", "tm_goals",
             "understat_minutes", "tm_minutes"]
@@ -293,8 +368,13 @@ def main() -> None:
           if len(um) else "  none")
     print(f"\nFlagged ({len(flagged)}):")
     print(flagged[cols + ["flag_reason"]].to_string(index=False) if len(flagged) else "  none")
+    print(f"\nNew to our leagues and matched (no stats to verify; check by hand if it matters):")
+    print(v[new & matched][["player", "teams", "transfermarkt_name", "match_score"]].to_string(index=False)
+          if (new & matched).any() else "  none")
 
-    write_sample(v)
+    # The hand-checked sample shows each player's 2025/26 club(s), so it stays the same as more seasons arrive
+    season_teams = pd.read_parquet(POOLS[0]).drop_duplicates("player_id").set_index("player_id")["teams"]
+    write_sample(v.assign(teams=v["understat_player_id"].map(season_teams).fillna(v["teams"])), sample_ids(v))
     print(f"\nwrote {PROCESSED / 'market.parquet'} ({len(market)} rows) and {SAMPLE}")
 
 

@@ -1,7 +1,7 @@
 """Tests for Transfermarkt name matching and verification on hand-built data."""
 import pandas as pd
 
-from scout.market import CLUB_STOPWORDS, best_candidate, name_score, normalise, verify
+from scout.market import CLUB_STOPWORDS, best_candidate, map_clubs, name_score, normalise, verify
 
 
 def test_normalise_accents_hyphens_case():
@@ -36,3 +36,26 @@ def test_verification_flags_goals_mismatch():
     assert v.loc[2, "flag_reason"] == "minutes"         # 900 vs 600: off by 33% > 20%
     assert v.loc[3, "flag_reason"] == "unmatched" and not v.loc[3, "verification_flag"]
     assert v["verification_flag"].tolist() == [True, True, False]
+
+
+def test_verification_marks_players_without_shared_season_unverified():
+    matches = pd.DataFrame({"understat_player_id": [1], "transfermarkt_player_id": pd.array([10], "Int64")})
+    understat = pd.DataFrame({"player_id": [99], "goals": [1], "minutes": [90]})   # player 1: no 2025/26 games
+    tm = pd.DataFrame({"player_id": [10], "goals": [4], "minutes_played": [900]})
+    v = verify(matches, understat, tm).iloc[0]
+    assert not v["verification_flag"] and v["flag_reason"].startswith("no 2025/26")
+
+
+def tm_clubs(rows):
+    return pd.DataFrame([{"competition_id": "FR1", "club_id": i, "name": n, "variants": [n], "in_league": lg}
+                         for i, n, lg in rows])
+
+
+def test_club_mapping_keeps_established_teams_on_league_clubs():
+    teams = pd.DataFrame({"league": "Ligue_1", "team": ["Nice", "Troyes", "Le Mans"], "season": [2025, 2026, 2026]})
+    tm = tm_clubs([(417, "OGC Nice", True), (1095, "ESTAC Troyes", False),
+                   (9999, "Nice Côte d'Azur Amateurs", False), (1416, "Amiens SC", False)])
+    m = map_clubs(teams, tm).set_index("understat_team")
+    assert m.loc["Nice", "transfermarkt_club_id"] == 417          # never the cup side
+    assert m.loc["Troyes", "transfermarkt_club_id"] == 1095       # promoted, found among the rest
+    assert pd.isna(m.loc["Le Mans", "transfermarkt_club_id"])     # not in snapshot: left unmapped

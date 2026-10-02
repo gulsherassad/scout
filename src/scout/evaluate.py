@@ -10,15 +10,16 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from scout.features import (KEYS, PROCESSED, ZONES, build_profiles, fit_shot_zones,
-                            last_action_categories, shot_grids, shots_in, style_priors,
-                            transform_shot_zones)
+from scout.features import (KEYS, PROCESSED, WINDOW_MINUTES, ZONES, build_profiles,
+                            fit_shot_zones, last_action_categories, recent_window, shot_grids,
+                            shots_in, style_priors, transform_shot_zones)
 
 REPORT = Path("reports/eval_baseline.md")
 EXPERIMENT_REPORTS = Path("reports/experiments")
 SPLITS = ("random", "stratified")
 METRICS = ("cosine", "euclidean")
-DEFAULTS = {"split": "random", "metric": "cosine", "shrinkage_k": 0, "zones": ZONES}
+DEFAULTS = {"split": "random", "metric": "cosine", "shrinkage_k": 0, "zones": ZONES, "mode": "season"}
+POOLS = {"season": "profiles.parquet", "recent": "profiles_recent.parquet"}
 FULL = "all features"
 SEEDS = range(20)
 KS = (1, 5, 10)
@@ -180,7 +181,9 @@ def paired(ranks: pd.DataFrame, base: pd.DataFrame, pool: pd.DataFrame) -> pd.Da
 def describe(config: dict) -> str:
     split = "random" if config["split"] == "random" else "stratified (starts and sub appearances halved separately)"
     k, z = config["shrinkage_k"], config["zones"]
-    return (f"{split} split, {config['metric']} similarity, "
+    mode = ("" if config["mode"] == "season" else
+            f"recent mode (each player's newest {WINDOW_MINUTES} league minutes across seasons), ")
+    return (f"{mode}{split} split, {config['metric']} similarity, "
             + (f"shot-style shares shrunk towards pool-wide shares with k = {k:g}" if k else "no shrinkage")
             + (f", shot-location zones from NMF with {z} components (fitted on half A)" if z else ", no shot zones"))
 
@@ -244,7 +247,7 @@ Average of the mean ranks: {reference.mean():.1f} in the baseline, {now.mean():.
 Generated {date.today()} by `python -m scout.evaluate{cli_args(config)}`.
 
 ## Setup
-- **Population:** {n} player-seasons from `profiles.parquet` ({", ".join(f"{k} {v}" for k, v in pool["league"].value_counts().items())}).
+- **Population:** {n} player-seasons from `{POOLS[config["mode"]]}` ({", ".join(f"{k} {v}" for k, v in pool["league"].value_counts().items())}).
 - **Method:** each player's appearances are split into halves A and B. Profiles built on B are matched against all {n} A profiles on z-scored features (fitted on A); we record where the player's own A profile ranks.
 - **Configuration:** {describe(config)}.
 - **Splits:** {len(set(ranks["seed"]))} (seeds {min(ranks["seed"])}–{max(ranks["seed"])}); metrics are mean ± std across splits.
@@ -270,7 +273,8 @@ The {N_WORST} players with the worst mean rank across splits (out of {n}).
 
 
 def cli_args(config: dict) -> str:
-    flags = {"split": "--split", "metric": "--metric", "shrinkage_k": "--shrinkage-k", "zones": "--zones"}
+    flags = {"split": "--split", "metric": "--metric", "shrinkage_k": "--shrinkage-k", "zones": "--zones",
+             "mode": "--mode"}
     return "".join(f" {flags[k]} {v:g}" if isinstance(v, (int, float)) else f" {flags[k]} {v}"
                    for k, v in config.items() if v != DEFAULTS[k])
 
@@ -281,6 +285,8 @@ def report_path(config: dict) -> Path:
     name = f"eval_{config['split']}_{config['metric']}_k{config['shrinkage_k']:g}"
     if config["zones"] != DEFAULTS["zones"]:
         name += f"_zones{config['zones']}"
+    if config["mode"] != DEFAULTS["mode"]:
+        name += f"_{config['mode']}"
     return EXPERIMENT_REPORTS / f"{name}.md"
 
 
@@ -292,15 +298,22 @@ def main() -> None:
                    help="pseudo-shots at pool-wide shares added to each player's shot-style shares")
     p.add_argument("--zones", type=int, default=DEFAULTS["zones"],
                    help="NMF components for shot-location zones (0 = none)")
+    p.add_argument("--mode", choices=tuple(POOLS), default=DEFAULTS["mode"],
+                   help="season profiles, or recent-window profiles (split the window in half)")
     args = p.parse_args()
     config = {"split": args.split, "metric": args.metric, "shrinkage_k": args.shrinkage_k,
-              "zones": args.zones}
+              "zones": args.zones, "mode": args.mode}
 
     shots = pd.read_parquet(PROCESSED / "shots.parquet")
     apps = pd.read_parquet(PROCESSED / "appearances.parquet")
-    pool = pd.read_parquet(PROCESSED / "profiles.parquet").set_index(KEYS)
-    ranks, imputed = evaluate(shots, apps, pool, **config)
-    base = None if config == DEFAULTS else evaluate(shots, apps, pool)[0]
+    if config["mode"] == "recent":
+        apps = recent_window(apps)  # only window appearances, labelled with the window's season
+    pool = pd.read_parquet(PROCESSED / POOLS[config["mode"]]).set_index(KEYS)
+    settings = {k: v for k, v in config.items() if k != "mode"}
+    ranks, imputed = evaluate(shots, apps, pool, **settings)
+    # Paired comparison only makes sense on the same pool: compare with default settings on it
+    base_settings = {k: v for k, v in DEFAULTS.items() if k != "mode"}
+    base = None if settings == base_settings else evaluate(shots, apps, pool, **base_settings)[0]
 
     report = summarise(ranks, pool, imputed, config, base)
     path = report_path(config)

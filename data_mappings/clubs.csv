@@ -19,6 +19,9 @@ EPL,Sunderland,289,Sunderland AFC,1.0,0.422
 EPL,Tottenham,148,Tottenham Hotspur,0.938,0.713
 EPL,West Ham,379,West Ham United,0.939,0.619
 EPL,Wolverhampton Wanderers,543,Wolverhampton Wanderers,1.0,0.573
+EPL,Coventry,990,Coventry City,0.952,0.691
+EPL,Hull,3008,Hull City,0.923,0.389
+EPL,Ipswich,677,Ipswich Town,0.947,0.562
 La_liga,Alaves,1108,Deportivo Alavés,0.909,0.429
 La_liga,Athletic Club,621,Athletic Bilbao,0.939,0.822
 La_liga,Atletico Madrid,13,Atlético de Madrid,1.0,0.626
@@ -39,6 +42,9 @@ La_liga,Real Sociedad,681,Real Sociedad,1.0,0.87
 La_liga,Sevilla,368,Sevilla FC,1.0,0.912
 La_liga,Valencia,1049,Valencia CF,1.0,0.561
 La_liga,Villarreal,1050,Villarreal CF,1.0,0.914
+La_liga,Deportivo La Coruna,897,Deportivo de La Coruña,1.0,0.714
+La_liga,Malaga,1084,Málaga CF,1.0,0.667
+La_liga,Racing Santander,630,Racing Santander,1.0,0.668
 Bundesliga,Augsburg,167,FC Augsburg,1.0,0.588
 Bundesliga,Bayer Leverkusen,15,Bayer 04 Leverkusen,0.983,0.67
 Bundesliga,Bayern Munich,27,Bayern Munich,1.0,0.613
@@ -57,6 +63,9 @@ Bundesliga,Union Berlin,89,1.FC Union Berlin,1.0,0.613
 Bundesliga,VfB Stuttgart,79,VfB Stuttgart,1.0,0.353
 Bundesliga,Werder Bremen,86,SV Werder Bremen,1.0,0.407
 Bundesliga,Wolfsburg,82,VfL Wolfsburg,1.0,0.588
+Bundesliga,Elversberg,64,SV 07 Elversberg,0.974,0.576
+Bundesliga,Paderborn,127,SC Paderborn 07,0.971,0.5
+Bundesliga,Schalke 04,33,FC Schalke 04,1.0,0.581
 Serie_A,AC Milan,5,AC Milan,1.0,0.925
 Serie_A,Atalanta,800,Atalanta BC,0.968,0.844
 Serie_A,Bologna,1025,Bologna Football Club 1909,1.0,0.475
@@ -77,6 +86,9 @@ Serie_A,Sassuolo,6574,US Sassuolo,1.0,0.83
 Serie_A,Torino,416,Torino FC,1.0,0.662
 Serie_A,Udinese,410,Udinese Calcio,1.0,0.5
 Serie_A,Verona,276,Hellas Verona,0.926,0.6
+Serie_A,Frosinone,8970,Frosinone Calcio,1.0,0.625
+Serie_A,Monza,2919,AC Monza,1.0,0.727
+Serie_A,Venezia,607,Venezia FC,1.0,0.714
 Ligue_1,Angers,1420,Angers SCO,0.95,0.667
 Ligue_1,Auxerre,290,AJ Auxerre,1.0,0.48
 Ligue_1,Brest,3911,Stade Brestois 29,0.905,0.53
@@ -95,3 +107,5 @@ Ligue_1,Paris Saint Germain,583,Paris Saint-Germain,1.0,0.883
 Ligue_1,Rennes,273,Stade Rennais FC,0.933,0.667
 Ligue_1,Strasbourg,667,RC Strasbourg Alsace,0.948,0.375
 Ligue_1,Toulouse,415,FC Toulouse,1.0,0.467
+Ligue_1,Le Mans,,,0.572,0.433
+Ligue_1,Troyes,1095,ESTAC Troyes,0.96,0.483
