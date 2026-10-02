@@ -23,6 +23,7 @@ BASE = "https://pub-e682421888d945d684bcae8890b0ec20.r2.dev/data"
 RAW = Path("data/raw/transfermarkt")
 TABLES = ["players", "player_valuations", "clubs", "appearances", "competitions", "games"]
 CLUB_MAP = Path("data_mappings/clubs.csv")
+PLAYER_OVERRIDES = Path("data_mappings/player_overrides.csv")  # hand-checked pairs names can't match
 SAMPLE = Path("reports/match_sample.md")
 
 SEASON = 2025  # both sources label 2025/26 as 2025
@@ -30,8 +31,8 @@ LEAGUES = {"EPL": "GB1", "La_liga": "ES1", "Bundesliga": "L1", "Serie_A": "IT1",
 
 CLUB_LOW_CONFIDENCE = 0.75   # club matches below this score are printed for checking
 MIN_NAME_SCORE = 0.75        # player matches below this are left unmatched
-GOALS_TOLERANCE = 2          # verification: flag if goals differ by more than this
-MINUTES_TOLERANCE = 0.20     # ... or minutes by more than this share of Understat's
+GOALS_TOLERANCE = 1          # verification: flag if goals differ by more than this
+MINUTES_TOLERANCE = 0.15     # ... or minutes by more than this share of Understat's
 N_SAMPLE = 50
 
 # Words that say what kind of club it is rather than which club
@@ -176,7 +177,28 @@ def match_players(pool: pd.DataFrame, club_map: pd.DataFrame, tm_apps: pd.DataFr
     ok = out["match_score"] >= MIN_NAME_SCORE
     out["transfermarkt_player_id"] = out["best_candidate_id"].where(ok).astype("Int64")
     out["transfermarkt_name"] = out["best_candidate"].where(ok)
+    out["match_method"] = np.where(ok, "name", "")
     return out.drop(columns="best_candidate_id")
+
+
+def apply_overrides(matches: pd.DataFrame, overrides: pd.DataFrame,
+                    tm_players: pd.DataFrame) -> pd.DataFrame:
+    """Set hand-checked pairs from the override file. Only matching changes: overridden
+    pairs still go through verification like any other. match_score stays the name score."""
+    out = matches.copy()
+    names = tm_players.set_index("player_id")["name"]
+    unknown = set(overrides["transfermarkt_player_id"]) - set(names.index)
+    if unknown:
+        raise ValueError(f"override Transfermarkt ids not in players table: {sorted(unknown)}")
+    o = overrides.set_index("understat_player_id")["transfermarkt_player_id"]
+    rows = out["understat_player_id"].isin(o.index)
+    tm_ids = out.loc[rows, "understat_player_id"].map(o)
+    out.loc[rows, "transfermarkt_player_id"] = tm_ids.astype("Int64")
+    out.loc[rows, "transfermarkt_name"] = tm_ids.map(names)
+    out.loc[rows, "match_score"] = [round(name_score(a, b), 3)
+                                    for a, b in zip(out.loc[rows, "player"], out.loc[rows, "transfermarkt_name"])]
+    out.loc[rows, "match_method"] = "override"
+    return out
 
 
 def verify(matches: pd.DataFrame, understat_apps: pd.DataFrame, tm_apps: pd.DataFrame) -> pd.DataFrame:
@@ -196,7 +218,8 @@ def verify(matches: pd.DataFrame, understat_apps: pd.DataFrame, tm_apps: pd.Data
 
 def market_columns(matched: pd.DataFrame, tm_players: pd.DataFrame, valuations: pd.DataFrame,
                    snapshot: pd.Timestamp) -> pd.DataFrame:
-    """Market fields for each matched player: latest valuation and snapshot details."""
+    """Market fields for each matched player: latest valuation and snapshot details.
+    `valuations_as_of` is the newest valuation in the whole snapshot."""
     latest = (valuations.assign(date=pd.to_datetime(valuations["date"])).sort_values("date")
               .groupby("player_id").last()[["market_value_in_eur", "date"]]
               .rename(columns={"market_value_in_eur": "market_value_eur", "date": "value_date"}))
@@ -207,6 +230,7 @@ def market_columns(matched: pd.DataFrame, tm_players: pd.DataFrame, valuations: 
         out[col] = pd.to_datetime(out[col])
     out["age_at_snapshot"] = ((snapshot - out["date_of_birth"]).dt.days / 365.25).round(1)
     out["snapshot_date"] = snapshot
+    out["valuations_as_of"] = pd.to_datetime(valuations["date"]).max()
     return out.rename(columns={"current_club_name": "current_club_at_snapshot"})
 
 
@@ -248,16 +272,20 @@ def main() -> None:
     print(f"\nclubs: {len(club_map)} mapped -> {CLUB_MAP}; {len(low)} low-confidence (score < {CLUB_LOW_CONFIDENCE}):")
     print(low.to_string(index=False) if len(low) else "  none")
 
-    v = verify(match_players(pool, club_map, tm_apps, tm_players), apps, tm_apps)
+    matches = apply_overrides(match_players(pool, club_map, tm_apps, tm_players),
+                              pd.read_csv(PLAYER_OVERRIDES), tm_players)
+    v = verify(matches, apps, tm_apps)
     market = market_columns(v, tm_players, valuations, snapshot)
     market.to_parquet(PROCESSED / "market.parquet", index=False)
 
     matched = v["transfermarkt_player_id"].notna()
     flagged = v[v["verification_flag"]]
-    print(f"\nplayers: {matched.sum()} of {len(v)} matched ({matched.mean():.1%}); "
-          f"{len(flagged)} flagged by verification ({len(flagged) / matched.sum():.1%} of matched)")
+    n_override = (v["match_method"] == "override").sum()
+    print(f"\nplayers: {matched.sum()} of {len(v)} matched ({matched.mean():.1%}; {n_override} from "
+          f"{PLAYER_OVERRIDES}); {len(flagged)} flagged by verification "
+          f"(goals off by > {GOALS_TOLERANCE} or minutes by > {MINUTES_TOLERANCE:.0%})")
     pd.set_option("display.width", 220)
-    cols = ["player", "teams", "transfermarkt_name", "match_score", "understat_goals", "tm_goals",
+    cols = ["player", "teams", "transfermarkt_name", "match_method", "match_score", "understat_goals", "tm_goals",
             "understat_minutes", "tm_minutes"]
     print(f"\nUnmatched ({(~matched).sum()}): best candidate scored below {MIN_NAME_SCORE}")
     um = v[~matched]

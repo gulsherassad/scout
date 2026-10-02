@@ -12,18 +12,38 @@ Find attacking players with a similar style across Europe's top 5 leagues, from 
 
 ```
 $ python -m scout.similar "Saka"
-                 player                teams      league position  minutes  similarity
-1          Nicolas Pepe           Villarreal     La_liga       MR     2407       0.871
-2       Ousmane Dembélé  Paris Saint Germain     Ligue_1       FW     1050       0.865
-3          Lamine Yamal            Barcelona     La_liga      AMR     2291       0.864
-4         Mohamed Salah            Liverpool         EPL      AMR     2163       0.850
-5       Florian Thauvin                 Lens     Ligue_1      AMC     2510       0.849
-6                Antony           Real Betis     La_liga      AMR     2495       0.845
-7         Michael Olise        Bayern Munich  Bundesliga      AMR     2308       0.809
-8       Mason Greenwood            Marseille     Ligue_1      AMR     2503       0.806
-9   Francisco Conceição             Juventus     Serie_A      AMC     2124       0.796
-10         Paulo Dybala                 Roma     Serie_A      AMC     1360       0.719
+                 player                teams      league position  minutes  age  value €m contract  npxG/90  similarity
+1          Nicolas Pepe           Villarreal     La_liga       MR     2407   31       6.0  2028-06     0.31       0.871
+2       Ousmane Dembélé  Paris Saint Germain     Ligue_1       FW     1050   29     100.0  2028-06     0.37       0.865
+3          Lamine Yamal            Barcelona     La_liga      AMR     2291   19     200.0  2031-06     0.46       0.864
+4         Mohamed Salah            Liverpool         EPL      AMR     2163   34      22.0        –     0.34       0.850
+5       Florian Thauvin                 Lens     Ligue_1      AMC     2510   33       5.0  2028-06     0.35       0.849
+6                Antony           Real Betis     La_liga      AMR     2495   26      40.0  2030-06     0.33       0.845
+7         Michael Olise        Bayern Munich  Bundesliga      AMR     2308   24     150.0  2029-06     0.45       0.809
+8       Mason Greenwood            Marseille     Ligue_1      AMR     2503   24      55.0  2029-06     0.30       0.806
+9   Francisco Conceição             Juventus     Serie_A      AMC     2124   23      30.0  2030-06     0.36       0.796
+10         Paulo Dybala                 Roma     Serie_A      AMC     1360   32       5.0        –     0.37       0.719
 ```
+
+Market filters are applied after ranking, so the result is the most similar players who meet them:
+
+```
+$ python -m scout.similar "Saka" --max-age 24 --max-value 40 --contract-before 2028
+Filters (age <= 24, value <= EUR 40m, contract ends before 2028) removed 485 of 492 players; 7 remain.
+
+               player              teams      league position  minutes  age  value €m contract  npxG/90  similarity
+1      Haissem Hassan        Real Oviedo     La_liga      AMR     1924   24       3.5  2027-06     0.09       0.382
+2       Karim Adeyemi  Borussia Dortmund  Bundesliga      AMC     1218   24      40.0  2027-06     0.39       0.320
+3      Carlos Álvarez            Levante     La_liga       MR     1910   22      15.0  2027-06     0.12       0.195
+4      Anssumane Fati             Monaco     Ligue_1      AMC     1058   23      15.0  2026-06     0.70       0.159
+5  Matteo Cancellieri              Lazio     Serie_A      FWR     1740   24       7.0  2027-06     0.27       0.141
+6         Pablo Pagis            Lorient     Ligue_1      AMC     1799   23      15.0  2027-06     0.31       0.041
+7         Tom Louchet               Nice     Ligue_1      AML     1344   23       7.0  2027-06     0.21      -0.022
+
+Market data: Transfermarkt snapshot as of 2026-06-12 (transfermarkt-datasets, CC0).
+```
+
+Similarity compares style, not output level, so npxG per 90 is shown next to it. Few young, affordable players share Saka's style: similarity drops quickly once the filters apply.
 
 ## How it works
 
@@ -59,6 +79,15 @@ Results over 20 random splits (mean ± std):
 - **The number of zones** (k = 6) was tuned on this same benchmark, so that result is slightly optimistic.
 - **Full log:** [reports/experiments.md](reports/experiments.md) has every experiment, including the rejected ones (stratified splits, Euclidean distance, shrinking style shares).
 
+## Market data
+
+Age, market value and contract end come from [transfermarkt-datasets](https://github.com/dcaribou/transfermarkt-datasets) (CC0). Its updates stopped in July 2026, so this is a fixed snapshot with valuations as of 2026-06-12. `python -m scout.market` downloads it once and links players:
+
+- **Clubs** are mapped by name within each league (`data_mappings/clubs.csv`).
+- **Players** are matched by name among the Transfermarkt players who appeared for the mapped club in 2025/26 league games. Five players known by different names in the two sources are matched by hand in `data_mappings/player_overrides.csv`.
+- **Every pair is checked** against both sources' 2025/26 league goals and minutes, and flagged if goals differ by more than 1 or minutes by more than 15%. All 493 pool players are matched; none are flagged.
+- **Hand check:** a random sample of 50 pairs ([reports/match_sample.md](reports/match_sample.md)) is checked by hand. Precision: TODO.
+
 ## Limitations
 
 - **Attackers only.** Understat has shots and chance creation but no defensive events, so defenders and midfielders can't be profiled fairly.
@@ -78,6 +107,7 @@ python -m scout.ingest --season 2025   # download match data to data/raw/
 python -m scout.parse                  # build data/processed/*.parquet and validate
 python -m scout.features               # build data/processed/profiles.parquet
 python -m scout.evaluate               # write reports/eval_baseline.md
+python -m scout.market                 # join Transfermarkt market data
 python -m scout.similar "Saka"         # 10 most similar players
 pytest
 ```
