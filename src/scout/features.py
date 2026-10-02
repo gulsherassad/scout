@@ -55,10 +55,37 @@ def by_minutes(apps: pd.DataFrame, col: str) -> pd.Series:
     return m.groupby(KEYS)[col].agg(", ".join)
 
 
-def shares(cats: pd.Series, columns: list[str], prefix: str) -> pd.DataFrame:
-    """Per player-season share of shots in each category; every column present."""
-    counts = pd.crosstab([cats.index.get_level_values(k) for k in KEYS], cats.values,
-                         rownames=KEYS).reindex(columns=columns, fill_value=0)
+def style_categories(shots: pd.DataFrame, last_actions: list[str]) -> dict[str, pd.Series]:
+    """Each style shot's lastAction and shotType category, indexed by player-season."""
+    style = style_shots(shots)
+    idx = style.set_index(KEYS).index
+    last_action = style["lastAction"].where(style["lastAction"].isin(last_actions), "Other")
+    last_action = last_action.where(style["lastAction"].notna(), "Missing")
+    shot_type = style["shotType"].map(SHOT_TYPES).fillna("other")
+    return {"last_action": pd.Series(last_action.values, index=idx),
+            "shot_type": pd.Series(shot_type.values, index=idx)}
+
+
+def category_columns(last_actions: list[str]) -> dict[str, list[str]]:
+    return {"last_action": last_actions + ["Other", "Missing"],
+            "shot_type": list(SHOT_TYPES.values()) + ["other"]}
+
+
+def style_priors(shots: pd.DataFrame, last_actions: list[str]) -> dict[str, pd.Series]:
+    """Share of each style category across all players' style shots."""
+    cats, cols = style_categories(shots, last_actions), category_columns(last_actions)
+    return {name: cats[name].value_counts(normalize=True).reindex(cols[name], fill_value=0)
+            for name in cats}
+
+
+def shares(cats: pd.Series, index: pd.Index, columns: list[str], prefix: str,
+           k: float = 0, prior: pd.Series | None = None) -> pd.DataFrame:
+    """Per player-season share of shots in each category, shrunk towards `prior`:
+    (count + k * prior) / (n_shots + k). With k = 0 these are raw shares, NaN without shots."""
+    counts = pd.crosstab([cats.index.get_level_values(key) for key in KEYS], cats.values,
+                         rownames=KEYS).reindex(index=index, columns=columns, fill_value=0)
+    if k:
+        counts = counts + k * prior[columns]
     out = counts.div(counts.sum(axis=1), axis=0)
     out.columns = [f"{prefix}_{snake(c)}" for c in columns]
     return out
@@ -67,7 +94,9 @@ def shares(cats: pd.Series, columns: list[str], prefix: str) -> pd.DataFrame:
 def build_profiles(shots: pd.DataFrame, apps: pd.DataFrame, *,
                    last_actions: list[str] | None = None,
                    min_starts: int = MIN_STARTS, min_minutes: int = MIN_MINUTES,
-                   positions: set[str] | None = ATTACKING_POSITIONS) -> pd.DataFrame:
+                   positions: set[str] | None = ATTACKING_POSITIONS,
+                   shrinkage_k: float = 0,
+                   priors: dict[str, pd.Series] | None = None) -> pd.DataFrame:
     """One row per player-season in the pool, built only from the appearances in `apps`.
 
     Shots are restricted to (match_id, player_id) pairs in `apps`, so passing a subset of
@@ -75,6 +104,8 @@ def build_profiles(shots: pd.DataFrame, apps: pd.DataFrame, *,
     `last_actions` fixes the lastAction categories; by default they come from `shots`.
     Pass the full-data categories when comparing profiles built on different subsets,
     so both have the same columns. `positions=None` turns off the primary-position filter.
+    `shrinkage_k` > 0 shrinks shot-style shares towards `priors` (see style_priors();
+    by default computed from `shots`), adding k pseudo-shots at the pool-wide shares.
     """
     shots = shots.merge(apps[["match_id", "player_id"]].drop_duplicates(), on=["match_id", "player_id"])
     if last_actions is None:
@@ -106,15 +137,14 @@ def build_profiles(shots: pd.DataFrame, apps: pd.DataFrame, *,
     chain, buildup = g["xGChain"].sum(), g["xGBuildup"].sum()
     p["buildup_share_of_chain"] = (buildup / chain).where(chain > 0)
 
-    # c) shot-style shares (NaN for players with no style shots)
-    idx = style.set_index(KEYS).index
-    last_action = style["lastAction"].where(style["lastAction"].isin(last_actions), "Other")
-    last_action = last_action.where(style["lastAction"].notna(), "Missing")
-    p = p.join(shares(pd.Series(last_action.values, index=idx),
-                      last_actions + ["Other", "Missing"], "last_action"))
-    shot_type = style["shotType"].map(SHOT_TYPES).fillna("other")
-    p = p.join(shares(pd.Series(shot_type.values, index=idx),
-                      list(SHOT_TYPES.values()) + ["other"], "shot_type"))
+    # c) shot-style shares, optionally shrunk towards the pool-wide share
+    # (with k = 0, NaN for players with no style shots)
+    if shrinkage_k and priors is None:
+        priors = style_priors(shots, last_actions)
+    cats, cols = style_categories(shots, last_actions), category_columns(last_actions)
+    for name in cats:
+        p = p.join(shares(cats[name], p.index, cols[name], name,
+                          shrinkage_k, priors[name] if shrinkage_k else None))
 
     pool = (p["starts"] >= min_starts) & (p["minutes"] >= min_minutes)
     if positions is not None:

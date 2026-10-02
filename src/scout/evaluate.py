@@ -3,15 +3,20 @@
 Each pool player's appearances are split at random into halves A and B. A profile built
 from B should be more similar to the same player's A profile than to anyone else's.
 """
+import argparse
 from datetime import date
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from scout.features import KEYS, PROCESSED, build_profiles, last_action_categories
+from scout.features import KEYS, PROCESSED, build_profiles, last_action_categories, style_priors
 
 REPORT = Path("reports/eval_baseline.md")
+EXPERIMENT_REPORTS = Path("reports/experiments")
+SPLITS = ("random", "stratified")
+METRICS = ("cosine", "euclidean")
+DEFAULTS = {"split": "random", "metric": "cosine", "shrinkage_k": 0}
 SEEDS = range(20)
 KS = (1, 5, 10)
 SHOT_BUCKETS = {"<20": (0, 19), "20–39": (20, 39), "40+": (40, np.inf)}  # full-season style shots
@@ -26,22 +31,26 @@ def feature_sets(columns: list[str]) -> dict[str, list[str]]:
             "npxG per 90 only": ["npxg_per90"]}
 
 
-def split_halves(apps: pd.DataFrame, seed: int) -> pd.Series:
+def split_halves(apps: pd.DataFrame, seed: int, split: str = "random") -> pd.Series:
     """True = half A, False = half B. Each player-season's appearances are shuffled and
-    split in two; A gets the smaller half when the count is odd."""
+    split in two; A gets the smaller half when the count is odd. "stratified" halves
+    starts and sub appearances separately, so both halves get a similar mix."""
     order = apps.sort_values(KEYS + ["match_id"]).index
     r = pd.Series(np.random.default_rng(seed).random(len(apps)), index=order).reindex(apps.index)
-    grouped = r.groupby([apps[k] for k in KEYS])
+    groups = [apps[k] for k in KEYS] + ([apps["started"]] if split == "stratified" else [])
+    grouped = r.groupby(groups)
     return grouped.rank(method="first") <= grouped.transform("size") // 2
 
 
-def half_profiles(shots, apps, pool, seed, last_actions) -> tuple[pd.DataFrame, pd.DataFrame]:
+def half_profiles(shots, apps, pool, seed, last_actions, split="random", shrinkage_k=0,
+                  priors=None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Profiles of pool players built on halves A and B, both indexed like `pool`."""
-    in_a = split_halves(apps, seed)
+    in_a = split_halves(apps, seed, split)
     out = []
     for half in (apps[in_a], apps[~in_a]):
         p = build_profiles(shots, half, last_actions=last_actions,
-                           min_starts=0, min_minutes=0, positions=None)
+                           min_starts=0, min_minutes=0, positions=None,
+                           shrinkage_k=shrinkage_k, priors=priors)
         out.append(p.set_index(KEYS).reindex(pool.index))
     return out[0], out[1]
 
@@ -55,20 +64,20 @@ def standardise(a: pd.DataFrame, b: pd.DataFrame) -> tuple[np.ndarray, np.ndarra
     return ((a - mean) / std).to_numpy(), ((b - mean) / std).to_numpy(), n_imputed
 
 
-def similarity(zb: np.ndarray, za: np.ndarray) -> np.ndarray:
-    """S[i, j] = similarity of B profile i to A profile j: cosine, or minus the absolute
-    difference for a single feature (where cosine can only be +1 or -1)."""
-    if za.shape[1] == 1:
-        return -np.abs(zb - za.T)
+def similarity(zb: np.ndarray, za: np.ndarray, metric: str = "cosine") -> np.ndarray:
+    """S[i, j] = similarity of B profile i to A profile j: cosine, or minus the Euclidean
+    distance. A single feature always uses distance (cosine can only be +1 or -1)."""
+    if metric == "euclidean" or za.shape[1] == 1:
+        return -np.sqrt(((zb[:, None, :] - za[None, :, :]) ** 2).sum(axis=2))
     na = za / np.maximum(np.linalg.norm(za, axis=1, keepdims=True), 1e-12)
     nb = zb / np.maximum(np.linalg.norm(zb, axis=1, keepdims=True), 1e-12)
     return nb @ na.T
 
 
-def own_ranks(zb: np.ndarray, za: np.ndarray) -> np.ndarray:
+def own_ranks(zb: np.ndarray, za: np.ndarray, metric: str = "cosine") -> np.ndarray:
     """Rank of each player's own A profile among all A profiles (1 = best). Ties count
     against the player, so a profile that can't tell players apart never scores well."""
-    s = similarity(zb, za)
+    s = similarity(zb, za, metric)
     return (s >= np.diag(s)[:, None]).sum(axis=1)
 
 
@@ -85,20 +94,23 @@ def baseline(n: int) -> dict[str, float]:
     return m
 
 
-def evaluate(shots, apps, pool, seeds=SEEDS) -> tuple[pd.DataFrame, list[int]]:
-    """Ranks for every (seed, feature set, player), and NaNs imputed per seed (all features)."""
+def evaluate(shots, apps, pool, seeds=SEEDS, split="random", metric="cosine",
+             shrinkage_k=0) -> tuple[pd.DataFrame, list[int]]:
+    """Ranks for every (seed, feature set, player), and NaNs imputed per seed (all features).
+    Shrinkage priors come from all players' shots, so they are the same for both halves."""
     last_actions = last_action_categories(shots)
+    priors = style_priors(shots, last_actions) if shrinkage_k else None
     apps = apps.merge(pool.reset_index()[KEYS], on=KEYS)
     sets = feature_sets(pool.columns.tolist())
     rows, imputed = [], []
     for seed in seeds:
-        a, b = half_profiles(shots, apps, pool, seed, last_actions)
+        a, b = half_profiles(shots, apps, pool, seed, last_actions, split, shrinkage_k, priors)
         for name, cols in sets.items():
             za, zb, n = standardise(a[cols], b[cols])
             if name == "rates + style":
                 imputed.append(n)
             rows.append(pd.DataFrame({"seed": seed, "feature_set": name,
-                                      "rank": own_ranks(zb, za)}, index=pool.index))
+                                      "rank": own_ranks(zb, za, metric)}, index=pool.index))
     return pd.concat(rows).reset_index(), imputed
 
 
@@ -110,7 +122,37 @@ def fmt_table(df: pd.DataFrame) -> str:
     return "\n".join(lines)
 
 
-def summarise(ranks: pd.DataFrame, pool: pd.DataFrame, imputed: list[int]) -> str:
+def rates_style(ranks: pd.DataFrame, pool: pd.DataFrame) -> pd.DataFrame:
+    """Ranks for the full feature set, with each player's pool columns and shot bucket."""
+    full = ranks[ranks["feature_set"] == "rates + style"].join(pool, on=KEYS)
+    full["hit@10"] = full["rank"] <= 10
+    full["shot_bucket"] = pd.cut(full["shots"], [-1, 19, 39, np.inf], labels=list(SHOT_BUCKETS))
+    return full
+
+
+def mean_ranks(ranks: pd.DataFrame) -> pd.Series:
+    """Each player's mean rank across splits, full feature set."""
+    return ranks[ranks["feature_set"] == "rates + style"].groupby(KEYS)["rank"].mean()
+
+
+def log_row(ranks: pd.DataFrame, pool: pd.DataFrame) -> dict[str, str]:
+    """The experiment-log metrics for the full feature set: mean ± std across splits."""
+    full = rates_style(ranks, pool)
+    per_seed = full.groupby("seed")["rank"].apply(lambda r: pd.Series(metrics(r.to_numpy()))).unstack()
+    per_seed["recall@10 (<20 shots)"] = full[full["shot_bucket"] == "<20"].groupby("seed")["hit@10"].mean()
+    return {c: f"{per_seed[c].mean():.3f} ± {per_seed[c].std():.3f}" for c in per_seed}
+
+
+def describe(config: dict) -> str:
+    split = "random" if config["split"] == "random" else "stratified (starts and sub appearances halved separately)"
+    k = config["shrinkage_k"]
+    return (f"{split} split, {config['metric']} similarity, "
+            + (f"shot-style shares shrunk towards pool-wide shares with k = {k:g}" if k else "no shrinkage"))
+
+
+def summarise(ranks: pd.DataFrame, pool: pd.DataFrame, imputed: list[int],
+              config: dict = DEFAULTS, reference: pd.Series | None = None) -> str:
+    """Markdown report. `reference`: baseline mean ranks of the players to track."""
     n = len(pool)
     per_seed = (ranks.groupby(["feature_set", "seed"])["rank"]
                 .apply(lambda r: pd.Series(metrics(r.to_numpy()))).unstack())
@@ -121,9 +163,7 @@ def summarise(ranks: pd.DataFrame, pool: pd.DataFrame, imputed: list[int]) -> st
     main.loc["random guess"] = [f"{v:.3f}" for v in baseline(n).values()]
     main.index.name = "features"
 
-    full = ranks[ranks["feature_set"] == "rates + style"].join(pool, on=KEYS)
-    full["hit@10"] = full["rank"] <= 10
-    full["shot_bucket"] = pd.cut(full["shots"], [-1, 19, 39, np.inf], labels=list(SHOT_BUCKETS))
+    full = rates_style(ranks, pool)
 
     def breakdown(col):
         per_seed = full.groupby([col, "seed"], observed=True)["hit@10"].mean().unstack()
@@ -142,13 +182,28 @@ def summarise(ranks: pd.DataFrame, pool: pd.DataFrame, imputed: list[int]) -> st
         "mean rank": worst["mean"].round(1), "best / worst rank": worst["min"].astype(str) + " / " + worst["max"].astype(str),
     }).set_index("player")
 
-    return f"""# Split-half self-retrieval: baseline
+    tracked = ""
+    if reference is not None:
+        now = mean_ranks(ranks).loc[reference.index]
+        t = pd.DataFrame({"player": pool.loc[reference.index, "player"].values,
+                          "baseline mean rank": reference.round(1).values,
+                          "mean rank here": now.round(1).values}).set_index("player")
+        tracked = f"""
+## Baseline's hardest players under this configuration
+Average of the mean ranks: {reference.mean():.1f} in the baseline, {now.mean():.1f} here.
 
-Generated {date.today()} by `python -m scout.evaluate`.
+{fmt_table(t)}
+"""
+
+    title = "baseline" if config == DEFAULTS else describe(config)
+    return f"""# Split-half self-retrieval: {title}
+
+Generated {date.today()} by `python -m scout.evaluate{cli_args(config)}`.
 
 ## Setup
 - **Population:** {n} player-seasons from `profiles.parquet` ({", ".join(f"{k} {v}" for k, v in pool["league"].value_counts().items())}).
-- **Method:** each player's appearances are split at random into halves A and B. Profiles built on B are matched against all {n} A profiles by cosine similarity on z-scored features (fitted on A); we record where the player's own A profile ranks.
+- **Method:** each player's appearances are split into halves A and B. Profiles built on B are matched against all {n} A profiles on z-scored features (fitted on A); we record where the player's own A profile ranks.
+- **Configuration:** {describe(config)}.
 - **Splits:** {len(set(ranks["seed"]))} (seeds {min(ranks["seed"])}–{max(ranks["seed"])}); metrics are mean ± std across splits.
 - **Imputed values** (NaN replaced by A's mean, all features): {np.mean(imputed):.1f} per split on average, out of {2 * n * len(feature_sets(pool.columns.tolist())["rates + style"])}.
 - The single-feature baseline uses minus the absolute difference instead of cosine, which is always ±1 in one dimension. Ties count against the player.
@@ -168,19 +223,48 @@ Shots exclude own goals, penalties and direct free kicks. Random guess is {10 / 
 The {N_WORST} players with the worst mean rank across splits (out of {n}).
 
 {fmt_table(worst)}
-"""
+{tracked}"""
+
+
+def cli_args(config: dict) -> str:
+    flags = {"split": "--split", "metric": "--metric", "shrinkage_k": "--shrinkage-k"}
+    return "".join(f" {flags[k]} {v:g}" if isinstance(v, (int, float)) else f" {flags[k]} {v}"
+                   for k, v in config.items() if v != DEFAULTS[k])
+
+
+def report_path(config: dict) -> Path:
+    if config == DEFAULTS:
+        return REPORT
+    return EXPERIMENT_REPORTS / f"eval_{config['split']}_{config['metric']}_k{config['shrinkage_k']:g}.md"
 
 
 def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("--split", choices=SPLITS, default=DEFAULTS["split"])
+    p.add_argument("--metric", choices=METRICS, default=DEFAULTS["metric"])
+    p.add_argument("--shrinkage-k", type=float, default=DEFAULTS["shrinkage_k"],
+                   help="pseudo-shots at pool-wide shares added to each player's shot-style shares")
+    args = p.parse_args()
+    config = {"split": args.split, "metric": args.metric, "shrinkage_k": args.shrinkage_k}
+
     shots = pd.read_parquet(PROCESSED / "shots.parquet")
     apps = pd.read_parquet(PROCESSED / "appearances.parquet")
     pool = pd.read_parquet(PROCESSED / "profiles.parquet").set_index(KEYS)
-    ranks, imputed = evaluate(shots, apps, pool)
-    report = summarise(ranks, pool, imputed)
-    REPORT.parent.mkdir(exist_ok=True)
-    REPORT.write_text(report)
+    ranks, imputed = evaluate(shots, apps, pool, **config)
+    reference = None
+    if config != DEFAULTS:  # track the baseline's hardest players
+        reference = mean_ranks(evaluate(shots, apps, pool)[0]).nlargest(N_WORST)
+
+    report = summarise(ranks, pool, imputed, config, reference)
+    path = report_path(config)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(report)
     print(report.split("## Recall@10 by primary")[0])
-    print(f"full report: {REPORT}")
+    if reference is not None:
+        print(report[report.index("## Baseline's hardest"):].split("\n\n")[1])
+    row = log_row(ranks, pool)
+    print("log row: " + " | ".join(f"{k} {v}" for k, v in row.items()))
+    print(f"full report: {path}")
 
 
 if __name__ == "__main__":

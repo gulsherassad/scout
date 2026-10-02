@@ -61,3 +61,20 @@ def test_end_to_end_on_synthetic_data():
     assert ranks["rank"].between(1, len(pool)).all()
     report = summarise(ranks, pool, imputed)
     assert "## Retrieval metrics" in report and "random guess" in report
+
+
+def test_stratified_split_halves_starts_and_subs_separately():
+    apps = pd.concat([season_apps(n_players=2, n_matches=6),
+                      pd.DataFrame([app(m, player_id=p, position="Sub", minutes=20)
+                                    for p in (1, 2) for m in range(6, 10)])], ignore_index=True)
+    in_a = split_halves(apps, seed=3, split="stratified")
+    per = in_a.groupby([apps["player_id"], apps["started"]]).sum()
+    assert (per.xs(True, level="started") == 3).all()        # 6 starts -> 3 in A
+    assert (per.xs(False, level="started") == 2).all()       # 4 subs -> 2 in A
+
+
+def test_euclidean_identical_halves_rank_first():
+    z = np.random.default_rng(1).normal(size=(30, 8))
+    assert (own_ranks(z, z, metric="euclidean") == 1).all()
+    za = np.array([[1.0, 0.0], [2.0, 0.0]])                   # cosine ties, distance doesn't
+    assert own_ranks(za, za, metric="euclidean").tolist() == [1, 1]

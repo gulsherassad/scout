@@ -80,3 +80,36 @@ def test_primary_position_ignores_sub_minutes():
             + [app(m, position="Sub", minutes=90) for m in range(5, 15)]
             + [app(m, position="DMC", minutes=50) for m in range(15, 20)])
     assert build([shot(0)], apps, **LOW).loc[7, "primary_position"] == "FW"
+
+
+def shrink_case():
+    shots = [shot(1, shotType="Head", lastAction="Cross"), shot(1, shotType="LeftFoot")]
+    return shots, [app(1)]
+
+
+def test_shrinkage_k0_changes_nothing():
+    shots, apps = shrink_case()
+    raw = build(shots, apps, **LOW)
+    pd.testing.assert_frame_equal(build(shots, apps, **LOW, shrinkage_k=0), raw)
+    assert raw.loc[7, "shot_type_head"] == 0.5
+
+
+def test_shrinkage_pulls_shares_towards_prior():
+    shots, apps = shrink_case()
+    prior = {"shot_type": pd.Series({"head": 0.2, "left_foot": 0.3, "right_foot": 0.5, "other": 0.0}),
+             "last_action": pd.Series({"Cross": 0.1, "Pass": 0.6, "Other": 0.1, "Missing": 0.2})}
+    k10 = build(shots, apps, **LOW, shrinkage_k=10, priors=prior).loc[7]
+    assert k10["shot_type_head"] == pytest.approx((1 + 10 * 0.2) / (2 + 10))
+    assert k10.filter(like="shot_type_").sum() == pytest.approx(1)
+    huge = build(shots, apps, **LOW, shrinkage_k=1e9, priors=prior).loc[7]
+    for cat, share in prior["shot_type"].items():
+        assert huge[f"shot_type_{cat}"] == pytest.approx(share, abs=1e-6)
+
+
+def test_shrinkage_gives_prior_to_player_without_style_shots():
+    shots = [shot(1, situation="Penalty", shotType="Head")]
+    prior = {"shot_type": pd.Series({"head": 0.2, "left_foot": 0.3, "right_foot": 0.5, "other": 0.0}),
+             "last_action": pd.Series({"Pass": 0.8, "Other": 0.1, "Missing": 0.1})}
+    p = build(shots, [app(1)], **LOW, shrinkage_k=5, priors=prior).loc[7]
+    assert p["shot_type_right_foot"] == pytest.approx(0.5)
+    assert pd.isna(build(shots, [app(1)], **LOW).loc[7, "shot_type_head"])  # k = 0: undefined
