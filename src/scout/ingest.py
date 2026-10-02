@@ -15,12 +15,25 @@ HEADERS = {"X-Requested-With": "XMLHttpRequest", "User-Agent": "Mozilla/5.0"}
 RAW = Path("data/raw")
 LEAGUES = ["EPL", "La_liga", "Bundesliga", "Serie_A", "Ligue_1"]
 DELAY_S = 1.5  # pause between requests
+RETRY_WAITS_S = (2, 4, 8)  # after a failed request, wait this long and retry; then give up
+
+SESSION = requests.Session()
+SESSION.headers.update(HEADERS)
 
 
-def fetch_json(path: str) -> dict:
-    r = requests.get(f"{BASE}/{path}", headers=HEADERS, timeout=30)
-    r.raise_for_status()
-    return r.json()
+def fetch_json(path: str, session: requests.Session = SESSION, sleep=time.sleep) -> dict:
+    """GET a JSON endpoint, retrying failed requests (network errors, HTTP errors, bad JSON)
+    with exponential backoff. Raises the last error once the retries are used up."""
+    for attempt, wait in enumerate((*RETRY_WAITS_S, None)):
+        try:
+            r = session.get(f"{BASE}/{path}", timeout=30)
+            r.raise_for_status()
+            return r.json()
+        except (requests.RequestException, ValueError) as e:
+            if wait is None:
+                raise
+            print(f"  retry {attempt + 1}/{len(RETRY_WAITS_S)} for {path} in {wait}s: {e}")
+            sleep(wait)
 
 
 def save_json(data: dict, dest: Path) -> None:

@@ -80,6 +80,27 @@ Results over 20 random splits (mean ± std):
 - **Recent-form profiles** score about the same: recall@10 0.249 ± 0.018 on their own pool of 522 (random 0.019), splitting each player's 2,000-minute window in half.
 - **Full log:** [reports/experiments.md](reports/experiments.md) has every experiment, including the rejected ones (stratified splits, Euclidean distance, shrinking style shares).
 
+## Pipeline
+
+A GitHub Actions workflow ([.github/workflows/weekly.yml](.github/workflows/weekly.yml)) refreshes everything every **Tuesday at 06:00 UTC**, and can be run by hand from the Actions tab. Runs never overlap.
+
+```mermaid
+flowchart LR
+    U[understat.com] -->|ingest, 3 retries| R
+    T[transfermarkt-datasets snapshot] -->|market| R
+    subgraph GA[GitHub Actions, weekly]
+        R[data/raw] --> P[parse + validation] --> F[features: season + recent] --> M[market join] --> E[evaluate: recall@10]
+    end
+    S3[(private S3 bucket, ca-central-1)] -->|sync down| R
+    E -->|sync up if checks pass| S3
+    GA -. OIDC role, main branch only .-> S3
+```
+
+- **Cache:** raw downloads and processed tables live in a private S3 bucket. Each run syncs it down, fetches only new matches, rebuilds the tables and syncs back. AWS access uses a short-lived OIDC role that only this repository's `main` branch can assume. No keys are stored. Setup: [infra/README.md](infra/README.md).
+- **Robust downloads:** each Understat request is retried up to 3 times (after 2, 4 and 8 seconds). Matches that still fail are fetched next week.
+- **Failure rules:** the run fails, and processed data is not uploaded, if parse validation fails or if recall@10 on the recent pool falls more than 0.05 below the logged baseline (0.249). New raw downloads are kept either way.
+- **Status:** every run writes `data/processed/run_status.json` (time, commit, matches fetched, checks passed, recall@10) to the bucket.
+
 ## Market data
 
 Age, market value and contract end come from [transfermarkt-datasets](https://github.com/dcaribou/transfermarkt-datasets) (CC0). Its updates stopped in July 2026, so this is a fixed snapshot with valuations as of 2026-06-12. `python -m scout.market` downloads it once and links players:
@@ -115,6 +136,7 @@ python -m scout.features --mode recent # recent-form profiles: profiles_recent.p
 python -m scout.evaluate               # write reports/eval_baseline.md
 python -m scout.market                 # join Transfermarkt market data
 python -m scout.similar "Saka"         # 10 most similar players
+python -m scout.weekly                 # the whole weekly pipeline (what CI runs)
 pytest
 ```
 

@@ -1,0 +1,65 @@
+name: weekly pipeline
+
+on:
+  schedule:
+    - cron: "0 6 * * 2"   # Tuesdays 06:00 UTC
+  workflow_dispatch:
+
+# Never run two pipelines at once; a second trigger waits for the first to finish
+concurrency:
+  group: weekly-pipeline
+  cancel-in-progress: false
+
+permissions:
+  id-token: write   # OIDC token for AWS
+  contents: read
+
+env:
+  AWS_REGION: ca-central-1
+  BUCKET: ${{ vars.SCOUT_BUCKET }}
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install
+        run: pip install -e . pytest
+
+      - name: Tests
+        run: pytest -q
+
+      - name: AWS credentials (OIDC, no stored keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Download cache from S3
+        run: aws s3 sync "s3://$BUCKET/data" data --only-show-errors
+
+      - name: Run pipeline
+        id: pipeline
+        run: python -m scout.weekly
+
+      # Raw downloads are always worth keeping, even if a later step failed
+      - name: Upload raw data
+        if: always() && steps.pipeline.outcome != 'skipped'
+        run: aws s3 sync data/raw "s3://$BUCKET/data/raw" --only-show-errors
+
+      # Processed data is uploaded only when validation and the quality check passed
+      - name: Upload processed data
+        if: success()
+        run: aws s3 sync data/processed "s3://$BUCKET/data/processed" --only-show-errors
+
+      - name: Upload run status
+        if: always() && hashFiles('data/processed/run_status.json') != ''
+        run: aws s3 cp data/processed/run_status.json "s3://$BUCKET/data/processed/run_status.json" --only-show-errors
