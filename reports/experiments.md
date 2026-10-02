@@ -20,6 +20,7 @@ Every row can be re-run with `python -m scout.evaluate <flags>` at the commit sh
 | 2026-10-02 | 77d4c83 | `--zones 10` | Zones, k = 10, all features | 0.056 ± 0.008 | 0.178 ± 0.014 | 0.258 ± 0.013 | 0.127 ± 0.008 | 0.114 ± 0.034 | 333.3 |
 | 2026-10-02 | 77d4c83 | `--zones 6` | Zones only, k = 6 ("zones only" set of the run above) | 0.016 ± 0.005 | 0.065 ± 0.008 | 0.118 ± 0.012 | 0.055 ± 0.004 | 0.078 ± 0.030 | — |
 | 2026-10-02 | f7890f4 | *(none)* | **New baseline**: default features now include 6 zones (same numbers as `--zones 6` above) | 0.059 ± 0.009 | 0.178 ± 0.012 | 0.258 ± 0.011 | 0.128 ± 0.008 | 0.118 ± 0.033 | 342.2 |
+| 2026-10-02 | 5823926 | `--mode recent` | Recent-form profiles: each player's newest 2,000 league minutes across 2025/26 and 2026/27, window split in half; own pool of 522 (random recall@10 0.019) (note 4) | 0.058 ± 0.009 | 0.166 ± 0.013 | 0.249 ± 0.018 | 0.125 ± 0.009 | 0.118 ± 0.045 | — |
 
 ## Notes
 
@@ -52,3 +53,6 @@ Every row can be re-run with `python -m scout.evaluate <flags>` at the commit sh
    - Zones alone (0.118) are about as informative as rates alone (0.124) or style shares alone (0.112), and add to them.
    - They do not help the hardest players (333–342 vs 339.2): see note 1.
    - Components: `reports/figures/shot_zones_k6.png` (`python -m scout.figures --zones 6`).
+4. **Recent-form profiles (2026-10-02).** One profile per player from their newest league appearances, newest first across seasons, up to and including the one that reaches 2,000 minutes; same pool thresholds (5 starts, 900 minutes) applied to the window. 522 players, of whom 119 have no 2026/27 league minutes yet, so their window lies in 2025/26.
+   - Not directly comparable with the season baseline: a different pool (522 vs 493, random recall@10 0.019 vs 0.020), and windows are capped near 2,000 minutes where season profiles use up to a full season, so each half has fewer matches for regular starters.
+   - Even so, recall@10 is close (0.249 ± 0.018 vs 0.258 ± 0.011), as is recall@10 for <20 shots (0.118 for both). Recent form identifies players about as well as a full season.
