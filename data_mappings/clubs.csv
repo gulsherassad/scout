@@ -1,0 +1,97 @@
+league,understat_team,transfermarkt_club_id,transfermarkt_club,score,runner_up_score
+EPL,Arsenal,11,Arsenal FC,1.0,0.533
+EPL,Aston Villa,405,Aston Villa,1.0,0.489
+EPL,Bournemouth,989,AFC Bournemouth,1.0,0.556
+EPL,Brentford,1148,Brentford FC,1.0,0.4
+EPL,Brighton,1237,Brighton & Hove Albion,0.914,0.533
+EPL,Burnley,1132,Burnley FC,1.0,0.556
+EPL,Chelsea,631,Chelsea FC,1.0,0.561
+EPL,Crystal Palace,873,Crystal Palace,1.0,0.533
+EPL,Everton,29,Everton FC,1.0,0.573
+EPL,Fulham,931,Fulham FC,1.0,0.59
+EPL,Leeds,399,Leeds United,0.918,0.416
+EPL,Liverpool,31,Liverpool FC,1.0,0.511
+EPL,Manchester City,281,Manchester City,1.0,0.685
+EPL,Manchester United,985,Manchester United,1.0,0.702
+EPL,Newcastle United,762,Newcastle United,1.0,0.756
+EPL,Nottingham Forest,703,Nottingham Forest,1.0,0.535
+EPL,Sunderland,289,Sunderland AFC,1.0,0.422
+EPL,Tottenham,148,Tottenham Hotspur,0.938,0.713
+EPL,West Ham,379,West Ham United,0.939,0.619
+EPL,Wolverhampton Wanderers,543,Wolverhampton Wanderers,1.0,0.573
+La_liga,Alaves,1108,Deportivo Alavés,0.909,0.429
+La_liga,Athletic Club,621,Athletic Bilbao,0.939,0.822
+La_liga,Atletico Madrid,13,Atlético de Madrid,1.0,0.626
+La_liga,Barcelona,131,FC Barcelona,1.0,0.933
+La_liga,Celta Vigo,940,Celta de Vigo,1.0,0.541
+La_liga,Elche,1531,Elche CF,1.0,0.444
+La_liga,Espanyol,714,RCD Espanyol Barcelona,0.923,0.494
+La_liga,Getafe,3709,Getafe CF,1.0,0.511
+La_liga,Girona,12321,Girona FC,1.0,0.533
+La_liga,Levante,3368,Levante UD,1.0,0.476
+La_liga,Mallorca,237,RCD Mallorca,1.0,0.561
+La_liga,Osasuna,331,CA Osasuna,1.0,0.539
+La_liga,Rayo Vallecano,367,Rayo Vallecano,1.0,0.58
+La_liga,Real Betis,150,Real Betis Balompié,0.943,0.9
+La_liga,Real Madrid,418,Real Madrid,1.0,0.914
+La_liga,Real Oviedo,2497,Real Oviedo,1.0,0.914
+La_liga,Real Sociedad,681,Real Sociedad,1.0,0.87
+La_liga,Sevilla,368,Sevilla FC,1.0,0.912
+La_liga,Valencia,1049,Valencia CF,1.0,0.561
+La_liga,Villarreal,1050,Villarreal CF,1.0,0.914
+Bundesliga,Augsburg,167,FC Augsburg,1.0,0.588
+Bundesliga,Bayer Leverkusen,15,Bayer 04 Leverkusen,0.983,0.67
+Bundesliga,Bayern Munich,27,Bayern Munich,1.0,0.613
+Bundesliga,Borussia Dortmund,16,Borussia Dortmund,1.0,0.648
+Bundesliga,Borussia M.Gladbach,18,Borussia Mönchengladbach,0.958,0.672
+Bundesliga,Eintracht Frankfurt,24,Eintracht Frankfurt,1.0,0.436
+Bundesliga,FC Cologne,3,1.FC Köln,0.545,0.375
+Bundesliga,FC Heidenheim,2036,1. Fußballclub Heidenheim 1846,1.0,0.7
+Bundesliga,Freiburg,60,SC Freiburg,1.0,0.588
+Bundesliga,Hamburger SV,41,Hamburger SV,1.0,0.588
+Bundesliga,Hoffenheim,533,TSG 1899 Hoffenheim,1.0,0.7
+Bundesliga,Mainz 05,39,1.FSV Mainz 05,1.0,0.339
+Bundesliga,RasenBallsport Leipzig,23826,RB Leipzig,1.0,0.36
+Bundesliga,St. Pauli,35,FC St. Pauli,1.0,0.338
+Bundesliga,Union Berlin,89,1.FC Union Berlin,1.0,0.613
+Bundesliga,VfB Stuttgart,79,VfB Stuttgart,1.0,0.353
+Bundesliga,Werder Bremen,86,SV Werder Bremen,1.0,0.407
+Bundesliga,Wolfsburg,82,VfL Wolfsburg,1.0,0.588
+Serie_A,AC Milan,5,AC Milan,1.0,0.925
+Serie_A,Atalanta,800,Atalanta BC,0.968,0.844
+Serie_A,Bologna,1025,Bologna Football Club 1909,1.0,0.475
+Serie_A,Cagliari,1390,Cagliari Calcio,1.0,0.429
+Serie_A,Como,1047,Como 1907,1.0,0.571
+Serie_A,Cremonese,2239,US Cremonese,1.0,0.5
+Serie_A,Fiorentina,430,ACF Fiorentina,1.0,0.549
+Serie_A,Genoa,252,Genoa CFC,0.943,0.503
+Serie_A,Inter,46,Inter Milan,0.925,0.5
+Serie_A,Juventus,506,Juventus FC,1.0,0.44
+Serie_A,Lazio,398,Società Sportiva Lazio S.p.A.,0.943,0.462
+Serie_A,Lecce,1005,US Lecce,1.0,0.429
+Serie_A,Napoli,6195,SSC Napoli,1.0,0.429
+Serie_A,Parma Calcio 1913,130,Parma Calcio 1913,1.0,0.833
+Serie_A,Pisa,4172,Pisa Sporting Club,1.0,0.852
+Serie_A,Roma,12,Associazione Sportiva Roma,1.0,0.778
+Serie_A,Sassuolo,6574,US Sassuolo,1.0,0.83
+Serie_A,Torino,416,Torino FC,1.0,0.662
+Serie_A,Udinese,410,Udinese Calcio,1.0,0.5
+Serie_A,Verona,276,Hellas Verona,0.926,0.6
+Ligue_1,Angers,1420,Angers SCO,0.95,0.667
+Ligue_1,Auxerre,290,AJ Auxerre,1.0,0.48
+Ligue_1,Brest,3911,Stade Brestois 29,0.905,0.53
+Ligue_1,Le Havre,738,Le Havre AC,1.0,0.6
+Ligue_1,Lens,826,RC Lens,1.0,0.6
+Ligue_1,Lille,1082,LOSC Lille,0.933,0.524
+Ligue_1,Lorient,1158,FC Lorient,1.0,0.545
+Ligue_1,Lyon,1041,Olympique Lyon,0.889,0.545
+Ligue_1,Marseille,244,Olympique Marseille,0.929,0.541
+Ligue_1,Metz,347,FC Metz,1.0,0.4
+Ligue_1,Monaco,162,AS Monaco,1.0,0.431
+Ligue_1,Nantes,995,FC Nantes,1.0,0.633
+Ligue_1,Nice,417,OGC Nice,1.0,0.413
+Ligue_1,Paris FC,10004,Paris FC,1.0,0.883
+Ligue_1,Paris Saint Germain,583,Paris Saint-Germain,1.0,0.883
+Ligue_1,Rennes,273,Stade Rennais FC,0.933,0.667
+Ligue_1,Strasbourg,667,RC Strasbourg Alsace,0.948,0.375
+Ligue_1,Toulouse,415,FC Toulouse,1.0,0.467
