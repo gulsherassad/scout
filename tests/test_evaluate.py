@@ -56,8 +56,8 @@ def test_end_to_end_on_synthetic_data():
                                shotType=["Head", "LeftFoot", "RightFoot"][p % 3],
                                lastAction=["Pass", "Cross", None][p % 3])
                           for p in range(1, 13) for m in range(10) for _ in range(rng.integers(0, 3))])
-    pool = build_profiles(shots, apps).set_index(KEYS)
-    ranks, imputed = evaluate(shots, apps, pool, seeds=range(2))
+    pool = build_profiles(shots, apps, zones=0).set_index(KEYS)
+    ranks, imputed = evaluate(shots, apps, pool, seeds=range(2), zones=0)
     assert len(ranks) == 2 * 4 * len(pool)                    # seeds x feature sets x players
     assert ranks["rank"].between(1, len(pool)).all()
     report = summarise(ranks, pool, imputed)
@@ -86,7 +86,7 @@ def test_zone_nmf_fitted_on_half_a_only(monkeypatch):
     rng = np.random.default_rng(0)
     shots = pd.DataFrame([shot(m, player_id=p, X=rng.uniform(0.8, 0.97), Y=rng.uniform(0.1, 0.9))
                           for p in range(1, 9) for m in range(10) for _ in range(2)])
-    pool = build_profiles(shots, apps).set_index(KEYS)
+    pool = build_profiles(shots, apps, zones=0).set_index(KEYS)
     fitted = []
     real_fit = ev.fit_shot_zones
     monkeypatch.setattr(ev, "fit_shot_zones", lambda g, k: fitted.append(g) or real_fit(g, k))

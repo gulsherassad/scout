@@ -25,6 +25,8 @@ def shot(match_id, player_id=7, xG=0.1, situation="OpenPlay", result="MissedShot
 
 
 def build(shots, apps, **kw):
+    """Profiles without shot zones unless asked: tiny pools can't fit the default NMF."""
+    kw.setdefault("zones", 0)
     return build_profiles(pd.DataFrame(shots), pd.DataFrame(apps), **kw).set_index("player_id")
 
 
@@ -155,3 +157,12 @@ def test_zone_weights_nan_without_style_shots():
     grids = shot_grids(shots)
     w = transform_shot_zones(fit_shot_zones(grids, k=2), grids.reindex([*grids.index, (42, 2025)]))
     assert w.iloc[-1].isna().all() and not w.iloc[:-1].isna().any().any()
+
+
+def test_build_profiles_adds_zone_weights():
+    rng = np.random.default_rng(3)
+    shots = [s for p in range(8) for s in zone_shots(rng, p, (0.1, 0.9))]
+    apps = [app(m, player_id=p) for p in range(8) for m in range(20)]
+    p = build(shots, apps, **LOW, zones=3)
+    assert list(p.filter(like="zone_").columns) == ["zone_1", "zone_2", "zone_3"]
+    assert np.allclose(p.filter(like="zone_").sum(axis=1), 1)

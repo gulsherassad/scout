@@ -28,7 +28,7 @@ PITCH_LENGTH, PITCH_WIDTH = 105, 68
 ZONE_X_EDGES = np.linspace(70, 105, 11)  # 3.5 m cells; shots from further out go in the first row
 ZONE_Y_EDGES = np.linspace(0, 68, 21)    # 3.4 m cells, full width, not mirrored
 ZONE_SMOOTHING = 1.0                     # Gaussian sigma, in cells
-ZONES = 0                                # NMF components in default profiles; 0 = no zone features
+ZONES = 6                                # NMF components in default profiles (experiments.md); 0 = none
 
 KEYS = ["player_id", "season"]
 APP_SUMS = {"xA": "xa", "key_passes": "key_passes", "xGChain": "xgchain", "xGBuildup": "xgbuildup"}
