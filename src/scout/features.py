@@ -66,14 +66,15 @@ def shares(cats: pd.Series, columns: list[str], prefix: str) -> pd.DataFrame:
 
 def build_profiles(shots: pd.DataFrame, apps: pd.DataFrame, *,
                    last_actions: list[str] | None = None,
-                   min_starts: int = MIN_STARTS, min_minutes: int = MIN_MINUTES) -> pd.DataFrame:
+                   min_starts: int = MIN_STARTS, min_minutes: int = MIN_MINUTES,
+                   positions: set[str] | None = ATTACKING_POSITIONS) -> pd.DataFrame:
     """One row per player-season in the pool, built only from the appearances in `apps`.
 
     Shots are restricted to (match_id, player_id) pairs in `apps`, so passing a subset of
     appearances is enough to build profiles on a subset of matches.
     `last_actions` fixes the lastAction categories; by default they come from `shots`.
     Pass the full-data categories when comparing profiles built on different subsets,
-    so both have the same columns.
+    so both have the same columns. `positions=None` turns off the primary-position filter.
     """
     shots = shots.merge(apps[["match_id", "player_id"]].drop_duplicates(), on=["match_id", "player_id"])
     if last_actions is None:
@@ -115,8 +116,9 @@ def build_profiles(shots: pd.DataFrame, apps: pd.DataFrame, *,
     p = p.join(shares(pd.Series(shot_type.values, index=idx),
                       list(SHOT_TYPES.values()) + ["other"], "shot_type"))
 
-    pool = (p["primary_position"].isin(ATTACKING_POSITIONS)
-            & (p["starts"] >= min_starts) & (p["minutes"] >= min_minutes))
+    pool = (p["starts"] >= min_starts) & (p["minutes"] >= min_minutes)
+    if positions is not None:
+        pool &= p["primary_position"].isin(positions)
     return p[pool].reset_index().sort_values(["league", "teams", "player"], ignore_index=True)
 
 
