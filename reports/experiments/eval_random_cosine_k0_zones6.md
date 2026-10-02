@@ -1,6 +1,6 @@
-# Split-half self-retrieval: baseline
+# Split-half self-retrieval: random split, cosine similarity, no shrinkage, shot-location zones from NMF with 6 components (fitted on half A)
 
-Generated 2026-10-02 by `python -m scout.evaluate`.
+Generated 2026-10-02 by `python -m scout.evaluate --zones 6`.
 
 ## Setup
 - **Population:** 493 player-seasons from `profiles.parquet` (EPL 116, La_liga 109, Serie_A 93, Ligue_1 88, Bundesliga 87).
@@ -56,3 +56,29 @@ The 10 players with the worst mean rank across splits (out of 493).
 | Maximilian Beier | Borussia Dortmund | AMC | 49 | 2069 | 329.4 | 158 / 462 |
 | Patrick Wimmer | Wolfsburg | AML | 24 | 1678 | 294.5 | 38 / 476 |
 | Roberto Navarro | Athletic Club | AML | 21 | 1246 | 278.6 | 7 / 465 |
+
+## Paired comparison with the baseline (all features)
+Recall@10 here minus the baseline's, on the same 20 splits.
+
+| group | players | recall@10 change | splits better / worse |
+|---|---|---|---|
+| all | 493 | +0.053 | 20 / 0 |
+| <20 shots | 54 | +0.036 | 16 / 1 |
+| 20–39 shots | 208 | +0.046 | 20 / 0 |
+| 40+ shots | 231 | +0.064 | 20 / 0 |
+
+## Baseline's hardest players under this configuration
+Average of the mean ranks: 339.2 in the baseline, 342.2 here.
+
+| player | baseline mean rank | mean rank here |
+|---|---|---|
+| Shuto Machino | 401.4 | 390.0 |
+| Benedict Hollerbach | 397.3 | 397.8 |
+| Santiago Hidalgo | 351.7 | 353.2 |
+| Amin Sarr | 349.4 | 373.3 |
+| Lovro Majer | 345.2 | 369.0 |
+| Amine Adli | 326.0 | 358.8 |
+| Danny Namaso | 314.2 | 350.6 |
+| Maximilian Beier | 312.0 | 329.4 |
+| Arnaud Kalimuendo Muinga | 299.2 | 266.6 |
+| Tijjani Noslin | 295.4 | 233.5 |

@@ -2,7 +2,7 @@
 
 Split-half self-retrieval on 2025/26 data for all 5 leagues: 493 pool player-seasons, 20 splits (seeds 0–19), features "rates + style". Values are mean ± std across splits. Random guess: recall@1 0.002, recall@5 0.010, recall@10 0.020, MRR 0.014.
 
-Every row can be re-run with `python -m scout.evaluate <flags>` at the commit shown; each non-baseline run writes its full report to `reports/experiments/`. "Hardest 10" is the average mean rank of the baseline's 10 hardest players (out of 493; random ≈ 247).
+Every row can be re-run with `python -m scout.evaluate <flags>` at the commit shown; each non-baseline run writes its full report to `reports/experiments/`. Flags are relative to the defaults at that commit: from f7890f4 the default features include 6 shot-location zones, so the earlier baseline is `--zones 0` there. "Hardest 10" is the average mean rank of the no-zones baseline's 10 hardest players (out of 493; random ≈ 247).
 
 | date | commit | flags | description | recall@1 | recall@5 | recall@10 | MRR | recall@10 (<20 shots) | hardest 10 |
 |---|---|---|---|---|---|---|---|---|---|
@@ -14,6 +14,12 @@ Every row can be re-run with `python -m scout.evaluate <flags>` at the commit sh
 | 2026-10-02 | 7e2115d | `--shrinkage-k 10` | Shrinkage, k = 10 | 0.037 ± 0.006 | 0.124 ± 0.010 | 0.197 ± 0.015 | 0.093 ± 0.007 | 0.116 ± 0.037 | 341.0 |
 | 2026-10-02 | 7e2115d | `--shrinkage-k 20` | Shrinkage, k = 20 | 0.035 ± 0.007 | 0.123 ± 0.009 | 0.196 ± 0.014 | 0.092 ± 0.007 | 0.123 ± 0.042 | 339.9 |
 | 2026-10-02 | 7e2115d | `--shrinkage-k 40` | Shrinkage, k = 40 (note 2) | 0.035 ± 0.008 | 0.120 ± 0.009 | 0.195 ± 0.013 | 0.091 ± 0.008 | 0.143 ± 0.050 | 338.3 |
+| 2026-10-02 | 77d4c83 | `--zones 4` | Shot-location zones (NMF on shot heatmaps), k = 4, all features (note 3) | 0.056 ± 0.006 | 0.170 ± 0.011 | 0.252 ± 0.014 | 0.123 ± 0.006 | 0.116 ± 0.037 | 335.3 |
+| 2026-10-02 | 77d4c83 | `--zones 6` | Zones, k = 6, all features. **Adopted** (note 3) | 0.059 ± 0.009 | 0.178 ± 0.012 | 0.258 ± 0.011 | 0.128 ± 0.008 | 0.118 ± 0.033 | 342.2 |
+| 2026-10-02 | 77d4c83 | `--zones 8` | Zones, k = 8, all features | 0.058 ± 0.010 | 0.175 ± 0.012 | 0.258 ± 0.014 | 0.127 ± 0.009 | 0.123 ± 0.039 | 335.2 |
+| 2026-10-02 | 77d4c83 | `--zones 10` | Zones, k = 10, all features | 0.056 ± 0.008 | 0.178 ± 0.014 | 0.258 ± 0.013 | 0.127 ± 0.008 | 0.114 ± 0.034 | 333.3 |
+| 2026-10-02 | 77d4c83 | `--zones 6` | Zones only, k = 6 ("zones only" set of the run above) | 0.016 ± 0.005 | 0.065 ± 0.008 | 0.118 ± 0.012 | 0.055 ± 0.004 | 0.078 ± 0.030 | — |
+| 2026-10-02 | f7890f4 | *(none)* | **New baseline**: default features now include 6 zones (same numbers as `--zones 6` above) | 0.059 ± 0.009 | 0.178 ± 0.012 | 0.258 ± 0.011 | 0.128 ± 0.008 | 0.118 ± 0.033 | 342.2 |
 
 ## Notes
 
@@ -31,3 +37,18 @@ Every row can be re-run with `python -m scout.evaluate <flags>` at the commit sh
    - The <20 bucket is 54 players, the 40+ bucket 231, so the net effect is negative.
    - It does nothing for the hardest 10 (338–341 vs 339.2): their problem is closeness to the pool average, and shrinkage pulls players further towards it.
    - In this evaluation each half has about half a player's shots, so a given k shrinks twice as hard here as it would on full-season profiles.
+
+3. **Shot-location zones (2026-10-02).** Following Decroos et al., "Player Vectors": each player's style shots (no own goals, penalties or direct free kicks) become a 2D histogram over the attacking area (70–105 m, full width, 10 × 20 cells of 3.5 × 3.4 m; shots from further out go in the first row; not mirrored), smoothed (Gaussian, σ = 1 cell) and normalised to sum to 1. NMF on the player × cell matrix gives k zone weights per player, normalised to sum to 1. In the evaluation, NMF is fitted on the A-half grids only within each split and applied to both halves. **k is tuned on this same evaluation, so the best value is slightly optimistic.**
+   - Paired by split against the no-zones baseline, recall@10 change (splits better / worse, of 20):
+
+     | k | all (493) | <20 shots (54) | 20–39 shots (208) | 40+ shots (231) |
+     |---|---|---|---|---|
+     | 4 | +0.047 (20 / 0) | +0.034 (17 / 1) | +0.039 (19 / 0) | +0.056 (20 / 0) |
+     | 6 | +0.053 (20 / 0) | +0.036 (16 / 1) | +0.046 (20 / 0) | +0.064 (20 / 0) |
+     | 8 | +0.053 (20 / 0) | +0.042 (14 / 1) | +0.049 (20 / 0) | +0.058 (20 / 0) |
+     | 10 | +0.053 (20 / 0) | +0.032 (13 / 3) | +0.053 (20 / 0) | +0.059 (20 / 0) |
+
+   - Unlike shrinkage, zones help every shot-count group. k = 6, 8 and 10 tie on recall@10 (0.258); k = 6 has the best recall@1 and MRR with the fewest components, so it was adopted.
+   - Zones alone (0.118) are about as informative as rates alone (0.124) or style shares alone (0.112), and add to them.
+   - They do not help the hardest players (333–342 vs 339.2): see note 1.
+   - Components: `reports/figures/shot_zones_k6.png` (`python -m scout.figures --zones 6`).
