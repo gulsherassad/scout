@@ -94,3 +94,14 @@ def test_duplicate_roster_differing_in_roster_out_deduped():
 def test_distinct_shots_by_same_player_kept():
     m = raw_match({"50": roster_entry("50", "7")}, [shot("1", "7", X="0.9"), shot("2", "7", X="0.8")])
     assert len(dedupe_match(m, "100")["shots"]["h"]) == 2
+
+
+def test_html_encoded_names_are_decoded():
+    s = {**shot("1", "7"), "player": "Ngal&#039;ayel Mukau", "player_assisted": "Dara O&#039;Shea"}
+    a = {**app("50", "7", shots="1"), "player": "Ngal&#039;ayel Mukau"}
+    shots, apps = clean(pd.DataFrame([s, {**shot("2", "8"), "player_assisted": None}]),
+                        pd.DataFrame([a, app("51", "8", shots="1")]))
+    assert shots["player"].tolist() == ["Ngal'ayel Mukau", "P8"]
+    assert shots["player_assisted"].tolist()[0] == "Dara O'Shea" and shots["player_assisted"].isna().tolist()[1]
+    assert apps["player"].tolist() == ["Ngal'ayel Mukau", "P8"]
+    assert validate(shots, apps) == []

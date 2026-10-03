@@ -132,7 +132,7 @@ Age, market value and contract end come from [transfermarkt-datasets](https://gi
 - **Clubs promoted for 2026/27** are found through domestic-cup games and the snapshot's club list. A club missing from the snapshot is left unmapped (currently Le Mans).
 - **Players** are matched by name among the Transfermarkt players who played 2025/26 games for the mapped club, or were registered there at the snapshot. Six players known by different names in the two sources are matched by hand in `data_mappings/player_overrides.csv`.
 - **Every pair is checked** against both sources' 2025/26 league goals and minutes, and flagged if goals differ by more than 1 or minutes by more than 15%. All 525 players in either pool are matched; none are flagged. Players new to these leagues in 2026/27 can't be checked this way; none are in the pool yet.
-- **Hand check:** a fixed random sample of 50 pairs ([reports/match_sample.md](reports/match_sample.md), ids in `data_mappings/sample_ids.csv`) is checked by hand. Precision: TODO.
+- **Hand check:** a fixed random sample of 50 pairs ([reports/match_sample.md](reports/match_sample.md), ids in `data_mappings/sample_ids.csv`): 50/50 randomly sampled matches verified correct (AI-assisted review of names, clubs and season goals/minutes from both sources; the one ambiguous case was checked manually). The 6 nickname overrides were verified separately against goals and minutes.
 
 ## Limitations
 

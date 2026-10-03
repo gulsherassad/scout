@@ -2,6 +2,7 @@
 
 Reads only from data/raw (no network), so it can be re-run any time.
 """
+import html
 import json
 import sys
 from pathlib import Path
@@ -17,6 +18,7 @@ APP_NUM = ["minutes", "goals", "own_goals", "shots", "xG", "xA", "assists",
 SHOT_IDS = ["shot_id", "match_id", "player_id"]
 APP_IDS = ["roster_id", "match_id", "player_id", "team_id"]
 MAX_ROWS_SHOWN = 10
+NAME_COLUMNS = {"shots": ["player", "player_assisted"], "apps": ["player"]}  # Understat HTML-encodes some, e.g. &#039;
 
 
 def load_json(path: Path) -> dict:
@@ -94,6 +96,9 @@ def clean(shots: pd.DataFrame, apps: pd.DataFrame) -> tuple[pd.DataFrame, pd.Dat
     apps["started"] = apps["position"] != "Sub"
     apps[APP_IDS] = apps[APP_IDS].astype("int64")
 
+    for df, cols in ((shots, NAME_COLUMNS["shots"]), (apps, NAME_COLUMNS["apps"])):
+        for col in (c for c in cols if c in df):
+            df[col] = df[col].map(lambda v: html.unescape(v) if isinstance(v, str) else v)
     for df in (shots, apps):
         df["date"] = pd.to_datetime(df["date"])
     return shots, apps

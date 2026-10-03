@@ -38,7 +38,7 @@
 | Mason Greenwood | Mason Greenwood | Marseille | 1.00 | 16 / 16 | 2503 / 2471 |  |
 | Mateus Mané | Mateus Mané | Wolverhampton Wanderers | 1.00 | 3 / 3 | 1784 / 1790 |  |
 | Mergim Vojvoda | Mërgim Vojvoda | Como | 1.00 | 2 / 2 | 1602 / 1593 |  |
-| Ngal&#039;ayel Mukau | Ngal'ayel Mukau | Lille | 0.98 | 1 / 1 | 1548 / 1540 |  |
+| Ngal'ayel Mukau | Ngal'ayel Mukau | Lille | 1.00 | 1 / 1 | 1548 / 1540 |  |
 | Nicolas Jackson | Nicolas Jackson | Bayern Munich | 1.00 | 8 / 8 | 991 / 1004 |  |
 | Nicolo Zaniolo | Nicolò Zaniolo | Udinese | 1.00 | 5 / 5 | 2308 / 2271 |  |
 | Nicolò Cambiaghi | Nicolò Cambiaghi | Bologna | 1.00 | 3 / 3 | 1510 / 1521 |  |
