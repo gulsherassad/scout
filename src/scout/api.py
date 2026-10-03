@@ -16,7 +16,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from scout.features import PROCESSED, WINDOW_MINUTES
-from scout.similar import Pool, find_players
+from scout.similar import LOW_DISTINCTIVENESS, Pool, find_players
 
 EXPERIMENT_LOG = Path("reports/experiments.md")
 FRONTEND_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]  # local frontend (Vite)
@@ -88,8 +88,8 @@ class Scout:
         self.pool = Pool(profiles, self.market.reset_index())
         self.key = {key[0]: key for key in self.pool.df.index}  # player_id -> pool key (one row each)
         zones_path = data_dir / "zones_recent.json"
-        zones = json.loads(zones_path.read_text()) if zones_path.exists() else []
-        self.zone_labels = {z["column"]: z["label"] for z in zones}
+        self.zones = json.loads(zones_path.read_text()) if zones_path.exists() else {"zones": []}
+        self.zone_labels = {z["column"]: z["label"] for z in self.zones["zones"]}
         self.zone_columns = [c for c in self.pool.features if c.startswith("zone_")]
         self.style_columns = [c for c in self.pool.features if c not in self.zone_columns]
         self.percentiles = self.pool.df[self.style_columns].rank(pct=True) * 100
@@ -127,8 +127,13 @@ class Scout:
 
     def explanation(self, key, other) -> dict:
         c = self.pool.contributions(key, other)
+        za = self.pool.z[self.pool.df.index.get_loc(key)]
+        zb = self.pool.z[self.pool.df.index.get_loc(other)]
+        i = {f: n for n, f in enumerate(self.pool.features)}
+        # z: each player's value in standard deviations from the pool average (sign = above/below)
         item = lambda f: {"feature": f, "label": feature_label(f, self.zone_labels),  # noqa: E731
-                          "contribution": round(float(c[f]), 4)}
+                          "contribution": round(float(c[f]), 4),
+                          "z_player": round(float(za[i[f]]), 2), "z_other": round(float(zb[i[f]]), 2)}
         worst = c.idxmin()
         return {"top": [item(f) for f in c.nlargest(N_TOP_REASONS).index],
                 "against": item(worst), "total": round(float(c.sum()), 4)}
@@ -166,6 +171,7 @@ def create_app(data_dir: Path = PROCESSED, log_path: Path = EXPERIMENT_LOG) -> F
                        "value_date": clean(m.get("value_date")),
                        "club_at_snapshot": clean(m.get("current_club_at_snapshot"))},
             "distinctiveness": round(distinctiveness, 1),
+            "low_reliability": bool(distinctiveness < LOW_DISTINCTIVENESS),
             "features": [{"feature": f, "label": feature_label(f, s.zone_labels),
                           "value": clean(df.at[key, f]), "percentile": clean(round(s.percentiles.at[key, f], 1))}
                          for f in s.style_columns],
@@ -184,6 +190,7 @@ def create_app(data_dir: Path = PROCESSED, log_path: Path = EXPERIMENT_LOG) -> F
         return {
             "player": s.summary(key),
             "distinctiveness": round(found["distinctiveness"], 1),
+            "low_reliability": bool(found["distinctiveness"] < LOW_DISTINCTIVENESS),
             "candidates": found["candidates"], "inactive_excluded": found["inactive_excluded"],
             "removed_by_filters": found["removed_by_filters"],
             "results": [{**s.summary(other), "similarity": round(float(results.at[other, "similarity"]), 4),
@@ -201,6 +208,11 @@ def create_app(data_dir: Path = PROCESSED, log_path: Path = EXPERIMENT_LOG) -> F
                              if "active" in df else None,
                              "x": round(float(s.map.at[key, "x"]), 4), "y": round(float(s.map.at[key, "y"]), 4)}
                             for key in df.index]}
+
+    @app.get("/zones")
+    def zones(request: Request):
+        """The NMF shot zones: each zone's share of shots per grid cell, and the grid."""
+        return state(request).zones
 
     @app.get("/meta")
     def meta(request: Request):

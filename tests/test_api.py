@@ -40,8 +40,11 @@ def client(tmp_path_factory):
         "current_club_at_snapshot": "Home FC", "value_date": pd.Timestamp("2026-06-01"),
         "valuations_as_of": pd.Timestamp("2026-06-12"),
     }).to_parquet(data / "market.parquet", index=False)
-    (data / "zones_recent.json").write_text(json.dumps(
-        [{"column": f"zone_{i}", "label": f"shots from zone {i}"} for i in (1, 2, 3)]))
+    grid = (np.ones((10, 20)) / 200).tolist()
+    (data / "zones_recent.json").write_text(json.dumps({
+        "pitch": {"length": 105, "width": 68}, "x_edges": list(np.linspace(70, 105, 11)),
+        "y_edges": list(np.linspace(0, 68, 21)), "y_zero_side": "attacker's right",
+        "zones": [{"column": f"zone_{i}", "label": f"shots from zone {i}", "grid": grid} for i in (1, 2, 3)]}))
     log = data / "experiments.md"
     log.write_text("| date | commit | flags | description | recall@1 | recall@5 | recall@10 | MRR |\n"
                    "|---|---|---|---|---|---|---|---|\n"
@@ -124,3 +127,19 @@ def test_cors_for_local_frontend(client):
     r = client.get("/meta", headers={"Origin": "http://localhost:5173"})
     assert r.headers["access-control-allow-origin"] == "http://localhost:5173"
     assert "access-control-allow-origin" not in client.get("/meta", headers={"Origin": "http://evil.example"}).headers
+
+
+def test_zones(client):
+    z = client.get("/zones").json()
+    assert [x["column"] for x in z["zones"]] == ["zone_1", "zone_2", "zone_3"]
+    assert len(z["x_edges"]) == 11 and len(z["y_edges"]) == 21
+    assert all(np.isclose(np.sum(x["grid"]), 1) for x in z["zones"])
+
+
+def test_explanation_reports_both_players_z(client):
+    s = client.get("/players/3/similar", params={"limit": 3}).json()
+    assert isinstance(s["low_reliability"], bool)
+    for r in s["results"]:
+        for t in r["explanation"]["top"]:
+            # a contribution is positive when both players are on the same side of the average
+            assert np.sign(t["z_player"] * t["z_other"]) == np.sign(t["contribution"]) or t["contribution"] == 0

@@ -313,9 +313,15 @@ def main() -> None:
     print(f"wrote {path}: {len(profiles)} rows, {profiles.shape[1]} columns")
     if ZONES:
         model = zone_model(shots, apps, profiles)
-        zones = [{"column": f"zone_{i + 1}", "label": describe_zone(c)} for i, c in enumerate(model.components_)]
+        nx, ny = len(ZONE_X_EDGES) - 1, len(ZONE_Y_EDGES) - 1
+        zones = [{"column": f"zone_{i + 1}", "label": describe_zone(c),
+                  "grid": (c / c.sum()).reshape(nx, ny).round(6).tolist()}  # [x row][y col], sums to 1
+                 for i, c in enumerate(model.components_)]
         zone_path = path.with_name(path.stem.replace("profiles", "zones") + ".json")
-        zone_path.write_text(json.dumps(zones, indent=1))
+        zone_path.write_text(json.dumps({
+            "pitch": {"length": PITCH_LENGTH, "width": PITCH_WIDTH},
+            "x_edges": ZONE_X_EDGES.tolist(), "y_edges": ZONE_Y_EDGES.tolist(),
+            "y_zero_side": "attacker's right", "zones": zones}))
         print(f"wrote {zone_path}: " + "; ".join(f"{z['column']} = {z['label']}" for z in zones))
     if args.mode == "recent":
         print(f"window end: {profiles['window_end'].min().date()} to {profiles['window_end'].max().date()}; "

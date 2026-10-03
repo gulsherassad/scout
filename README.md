@@ -45,6 +45,29 @@ Market data: Transfermarkt snapshot as of 2026-06-12 (transfermarkt-datasets, CC
 
 Similarity compares style, not output level, so npxG per 90 is shown next to it. Few young, affordable players share Saka's style: similarity drops quickly once the filters apply.
 
+## Web app
+
+A React + TypeScript frontend (`web/`) on top of the API: search with live filters and a "why similar?" line for every result, a player page with their shot zones on a pitch and style percentiles against all attackers, and a style map of the whole pool.
+
+![Search page: Saka's most similar players, each with shared traits and the main difference](reports/figures/web_search.png)
+
+![Style map: every attacker placed by style, coloured by role, inactive players faded](reports/figures/web_map.png)
+
+Run the backend and the frontend together, in two terminals:
+
+```bash
+# terminal 1: API on http://localhost:8000 (needs the processed data, see "How to run")
+source .venv/bin/activate
+uvicorn scout.api:app --reload
+
+# terminal 2: frontend on http://localhost:5173
+cd web
+npm install
+npm run dev
+```
+
+The frontend reads the API address from `VITE_API_URL` (default `http://localhost:8000`); the API accepts browser requests from port 5173 only. `npm test` runs the frontend tests, `npm run build` type-checks and builds `web/dist`.
+
 ## How it works
 
 **Data:** EPL, La Liga, Bundesliga, Serie A and Ligue 1: the full 2025/26 season (1,752 matches) and 2026/27 so far (250 matches to 2026-09-20), about 51k shots.
