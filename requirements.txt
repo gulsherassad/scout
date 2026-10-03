@@ -6,3 +6,6 @@ matplotlib
 pytest
 scipy
 scikit-learn
+fastapi
+uvicorn
+httpx2

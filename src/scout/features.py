@@ -6,6 +6,7 @@ build_profiles() works on any subset of matches (e.g. half a season, for validat
 from pathlib import Path
 
 import argparse
+import json
 
 import numpy as np
 import pandas as pd
@@ -103,6 +104,38 @@ def transform_shot_zones(model: NMF, grids: pd.DataFrame) -> pd.DataFrame:
     total = w.sum(axis=1, keepdims=True)
     w = np.divide(w, total, out=np.full_like(w, np.nan), where=total > 0)
     return pd.DataFrame(w, index=grids.index, columns=[f"zone_{i + 1}" for i in range(w.shape[1])])
+
+
+def zone_model(shots: pd.DataFrame, apps: pd.DataFrame, profiles: pd.DataFrame, k: int = ZONES) -> NMF:
+    """The NMF behind `profiles`' zone weights: the same fit as build_profiles(zones=k)."""
+    keys = profiles.set_index(KEYS).index
+    grids = shot_grids(shots_in(shots, apps.merge(profiles[KEYS], on=KEYS))).reindex(keys)
+    return fit_shot_zones(grids, k)
+
+
+def zone_centre(component: np.ndarray) -> tuple[float, float]:
+    """A component's centre of mass: metres from the goal line, and metres to the
+    attacker's right of the centre line (negative = left)."""
+    nx, ny = len(ZONE_X_EDGES) - 1, len(ZONE_Y_EDGES) - 1
+    w = component.reshape(nx, ny) / component.sum()
+    x_mid = (ZONE_X_EDGES[:-1] + ZONE_X_EDGES[1:]) / 2
+    y_mid = (ZONE_Y_EDGES[:-1] + ZONE_Y_EDGES[1:]) / 2
+    return PITCH_LENGTH - (w.sum(axis=1) * x_mid).sum(), PITCH_WIDTH / 2 - (w.sum(axis=0) * y_mid).sum()
+
+
+def describe_zone(component: np.ndarray) -> str:
+    """Plain-language label, e.g. "shots from the right of the box"."""
+    depth, lateral = zone_centre(component)
+    side = "" if abs(lateral) < 4 else ("right" if lateral > 0 else "left")
+    if depth < 9:
+        where = "close range" + (f", {side} side" if side else "")
+    elif depth < 15:
+        where = f"the {side or 'centre'} of the box"
+    elif depth < 20:
+        where = "the edge of the box" + (f", {side}" if side else "")
+    else:
+        where = "outside the box" + (f", {side}" if side else "")
+    return f"shots from {where}"
 
 
 def last_action_categories(shots: pd.DataFrame) -> list[str]:
@@ -278,6 +311,12 @@ def main() -> None:
               f"{profiles['active'].sum()} of {len(profiles)}")
     profiles.to_parquet(path, index=False)
     print(f"wrote {path}: {len(profiles)} rows, {profiles.shape[1]} columns")
+    if ZONES:
+        model = zone_model(shots, apps, profiles)
+        zones = [{"column": f"zone_{i + 1}", "label": describe_zone(c)} for i, c in enumerate(model.components_)]
+        zone_path = path.with_name(path.stem.replace("profiles", "zones") + ".json")
+        zone_path.write_text(json.dumps(zones, indent=1))
+        print(f"wrote {zone_path}: " + "; ".join(f"{z['column']} = {z['label']}" for z in zones))
     if args.mode == "recent":
         print(f"window end: {profiles['window_end'].min().date()} to {profiles['window_end'].max().date()}; "
               f"window start: {profiles['window_start'].min().date()} to {profiles['window_start'].max().date()}")

@@ -20,6 +20,8 @@ env:
 
 jobs:
   pipeline:
+    # Skipped (not failed) until the AWS stack is deployed and both repo variables are set
+    if: vars.AWS_ROLE_ARN != '' && vars.SCOUT_BUCKET != ''
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -32,7 +34,7 @@ jobs:
           cache-dependency-path: pyproject.toml
 
       - name: Install
-        run: pip install -e . pytest
+        run: pip install -e . pytest httpx2
 
       - name: Tests
         run: pytest -q

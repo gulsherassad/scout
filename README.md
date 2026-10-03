@@ -137,6 +137,7 @@ python -m scout.evaluate               # write reports/eval_baseline.md
 python -m scout.market                 # join Transfermarkt market data
 python -m scout.similar "Saka"         # 10 most similar players
 python -m scout.weekly                 # the whole weekly pipeline (what CI runs)
+uvicorn scout.api:app --reload         # HTTP API on http://127.0.0.1:8000 (docs at /docs)
 pytest
 ```
 

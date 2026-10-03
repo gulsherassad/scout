@@ -46,17 +46,43 @@ def find_players(query: str, names: pd.Series) -> list:
     return list(fuzzy[fuzzy >= FUZZY_CUTOFF].sort_values(ascending=False).index)
 
 
-def similar_players(pool: pd.DataFrame, key) -> tuple[pd.DataFrame, float]:
-    """All other players ranked by similarity to `key` (most similar first), and the
-    player's distinctiveness percentile."""
-    cols = feature_sets(pool.columns.tolist())[FULL]
-    z, _, _ = standardise(pool[cols], pool[cols])
-    i = pool.index.get_loc(key)
-    sims = pd.Series(similarity(z[i:i + 1], z)[0], index=pool.index).drop(key)
-    ranked = pool.loc[sims.sort_values(ascending=False).index].assign(similarity=sims)
-    dist = np.linalg.norm(z, axis=1)
-    percentile = 100 * (np.delete(dist, i) < dist[i]).mean()
-    return ranked, percentile
+class Pool:
+    """Profiles with market fields, z-scored once, for ranking players by style similarity.
+    Shared by the command line and the API."""
+
+    def __init__(self, profiles: pd.DataFrame, market: pd.DataFrame):
+        self.df = with_market(profiles.set_index(KEYS), market)
+        self.features = feature_sets(self.df.columns.tolist())[FULL]
+        self.z, _, _ = standardise(self.df[self.features], self.df[self.features])
+        self.distance = np.linalg.norm(self.z, axis=1)  # from the pool average
+
+    def ranked(self, key) -> tuple[pd.DataFrame, float]:
+        """All other players, most similar first, and `key`'s distinctiveness percentile:
+        the share of other players whose profile is closer to the pool average."""
+        i = self.df.index.get_loc(key)
+        sims = pd.Series(similarity(self.z[i:i + 1], self.z)[0], index=self.df.index).drop(key)
+        ranked = self.df.loc[sims.sort_values(ascending=False).index].assign(similarity=sims)
+        percentile = 100 * (np.delete(self.distance, i) < self.distance[i]).mean()
+        return ranked, percentile
+
+    def search(self, key, max_age=None, max_value=None, contract_before=None,
+               include_inactive=False) -> dict:
+        """Ranking, then (recent mode) inactive players removed unless asked, then market
+        filters: the most similar players who meet the criteria, in order."""
+        ranked, percentile = self.ranked(key)
+        inactive = 0
+        if "active" in ranked.columns and not include_inactive:
+            ranked, inactive = exclude_inactive(ranked)
+        kept, removed = apply_filters(ranked, max_age, max_value, contract_before)
+        return {"results": kept, "removed_by_filters": removed, "inactive_excluded": inactive,
+                "candidates": len(ranked), "distinctiveness": percentile}
+
+    def contributions(self, key, other) -> pd.Series:
+        """Each feature's share of the cosine similarity of two players' z-scored profiles,
+        a_i * b_i / (|a| |b|); they sum to the similarity."""
+        a = self.z[self.df.index.get_loc(key)]
+        b = self.z[self.df.index.get_loc(other)]
+        return pd.Series(a * b / max(np.linalg.norm(a) * np.linalg.norm(b), 1e-12), index=self.features)
 
 
 def with_market(profiles: pd.DataFrame, market: pd.DataFrame) -> pd.DataFrame:
@@ -110,7 +136,8 @@ def main() -> None:
         profiles = profiles[profiles["season"] == args.season]
         if profiles.empty:
             sys.exit(f"No season profiles for {args.season}.")
-    pool = with_market(profiles.set_index(KEYS), market)
+    scout_pool = Pool(profiles, market)
+    pool = scout_pool.df
     matches = find_players(args.name, pool["player"])
     if not matches:
         sys.exit(f'No player in the pool matches "{args.name}".')
@@ -123,11 +150,9 @@ def main() -> None:
 
     key = matches[0]
     me = pool.loc[key]
-    ranked, percentile = similar_players(pool, key)
-    inactive = 0
-    if args.season is None and not args.include_inactive:
-        ranked, inactive = exclude_inactive(ranked)
-    kept, removed = apply_filters(ranked, args.max_age, args.max_value, args.contract_before)
+    found = scout_pool.search(key, args.max_age, args.max_value, args.contract_before, args.include_inactive)
+    kept, removed, inactive = found["results"], found["removed_by_filters"], found["inactive_excluded"]
+    percentile = found["distinctiveness"]
     print(f"{me['player']} | {me['teams']} | {me['league']} | {me['primary_position']} | "
           f"{me['minutes']} min | {me['shots']} shots | npxG/90 {me['npxg_per90']:.2f}")
     if args.season is None:
@@ -147,7 +172,7 @@ def main() -> None:
                 f"contract ends before {args.contract_before}" if args.contract_before is not None else None]
     criteria = [c for c in criteria if c]
     if criteria:
-        print(f"Filters ({', '.join(criteria)}) removed {removed} of {len(ranked)} players; "
+        print(f"Filters ({', '.join(criteria)}) removed {removed} of {found['candidates']} players; "
               f"{len(kept)} remain.")
 
     top = kept.head(TOP_N).reset_index(drop=True)

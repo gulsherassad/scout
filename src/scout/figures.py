@@ -12,8 +12,8 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from matplotlib.patches import Arc, Rectangle  # noqa: E402
 
-from scout.features import (KEYS, PITCH_LENGTH, PITCH_WIDTH, PROCESSED, ZONE_X_EDGES,  # noqa: E402
-                            ZONE_Y_EDGES, fit_shot_zones, shot_grids, shots_in)
+from scout.features import (PITCH_LENGTH, PITCH_WIDTH, PROCESSED, ZONE_X_EDGES,  # noqa: E402
+                            ZONE_Y_EDGES, zone_centre, zone_model)
 
 FIGURES = Path("reports/figures")
 
@@ -37,12 +37,8 @@ def draw_half_pitch(ax) -> None:
 
 
 def zone_label(component: np.ndarray) -> str:
-    """Rough description from the component's centre of mass."""
-    x_mid = (ZONE_X_EDGES[:-1] + ZONE_X_EDGES[1:]) / 2
-    y_mid = (ZONE_Y_EDGES[:-1] + ZONE_Y_EDGES[1:]) / 2
-    weights = component / component.sum()
-    depth = PITCH_LENGTH - (weights.sum(axis=1) * x_mid).sum()
-    lateral = PITCH_WIDTH / 2 - (weights.sum(axis=0) * y_mid).sum()  # > 0 = attacker's right
+    """Short description from the component's centre of mass, e.g. "right, ~13 m out"."""
+    depth, lateral = zone_centre(component)
     side = "centre" if abs(lateral) < 4 else ("right" if lateral > 0 else "left")
     return f"{side}, ~{depth:.0f} m out"
 
@@ -78,10 +74,9 @@ def main() -> None:
 
     shots = pd.read_parquet(PROCESSED / "shots.parquet")
     apps = pd.read_parquet(PROCESSED / "appearances.parquet")
-    pool = pd.read_parquet(PROCESSED / "profiles.parquet").set_index(KEYS)
+    pool = pd.read_parquet(PROCESSED / "profiles.parquet")
     # Same fit as build_profiles(zones=k): full-season grids of the pool players
-    grids = shot_grids(shots_in(shots, apps.merge(pool.reset_index()[KEYS], on=KEYS))).reindex(pool.index)
-    model = fit_shot_zones(grids, args.zones)
+    model = zone_model(shots, apps, pool, args.zones)
     path = FIGURES / f"shot_zones_k{args.zones}.png"
     plot_shot_zones(model.components_, path)
     print(f"wrote {path}")
